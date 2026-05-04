@@ -327,15 +327,18 @@ def get_month_stats(year, month):
     month_str = f"{year:04d}-{month:02d}"
     conn = get_db()
 
-    month_hours = conn.execute(
-        "SELECT COALESCE(SUM(hours),0) AS t FROM time_entries WHERE entry_date LIKE ? AND is_absence=0",
-        (f"{month_str}%",)
-    ).fetchone()['t']
+    row = conn.execute('''
+        SELECT
+            COALESCE(SUM(CASE WHEN is_absence=0 AND include_in_export=1 THEN hours ELSE 0 END),0) AS export_h,
+            COALESCE(SUM(CASE WHEN is_absence=0 AND include_in_export=0 THEN hours ELSE 0 END),0) AS no_export_h,
+            COALESCE(SUM(CASE WHEN is_absence=1                          THEN hours ELSE 0 END),0) AS absence_h
+        FROM time_entries WHERE entry_date LIKE ?
+    ''', (f"{month_str}%",)).fetchone()
 
-    absence_hours = conn.execute(
-        "SELECT COALESCE(SUM(hours),0) AS t FROM time_entries WHERE entry_date LIKE ? AND is_absence=1",
-        (f"{month_str}%",)
-    ).fetchone()['t']
+    export_hours   = row['export_h']
+    no_export_hours = row['no_export_h']
+    month_hours    = export_hours + no_export_hours
+    absence_hours  = row['absence_h']
 
     num_days = calendar.monthrange(year, month)[1]
     working_days = sum(
@@ -361,13 +364,15 @@ def get_month_stats(year, month):
 
     conn.close()
     return {
-        'month_hours': round(month_hours, 2),
-        'absence_hours': round(absence_hours, 2),
-        'total_fund': total_fund,
-        'remaining': round(total_fund - month_hours - absence_hours, 2),
-        'working_days': effective_working_days,
-        'holiday_days': holiday_days,
-        'project_stats': [dict(p) for p in project_stats]
+        'month_hours':    round(month_hours, 2),
+        'export_hours':   round(export_hours, 2),
+        'no_export_hours': round(no_export_hours, 2),
+        'absence_hours':  round(absence_hours, 2),
+        'total_fund':     total_fund,
+        'remaining':      round(total_fund - month_hours - absence_hours, 2),
+        'working_days':   effective_working_days,
+        'holiday_days':   holiday_days,
+        'project_stats':  [dict(p) for p in project_stats]
     }
 
 
@@ -387,23 +392,29 @@ def get_week_stats(year, week):
     total_fund = effective_working_days * 8
 
     conn = get_db()
-    week_hours = conn.execute(
-        "SELECT COALESCE(SUM(hours),0) AS t FROM time_entries WHERE entry_date>=? AND entry_date<=? AND is_absence=0",
-        (date_from, date_to)
-    ).fetchone()['t']
-    absence_hours = conn.execute(
-        "SELECT COALESCE(SUM(hours),0) AS t FROM time_entries WHERE entry_date>=? AND entry_date<=? AND is_absence=1",
-        (date_from, date_to)
-    ).fetchone()['t']
+    row = conn.execute('''
+        SELECT
+            COALESCE(SUM(CASE WHEN is_absence=0 AND include_in_export=1 THEN hours ELSE 0 END),0) AS export_h,
+            COALESCE(SUM(CASE WHEN is_absence=0 AND include_in_export=0 THEN hours ELSE 0 END),0) AS no_export_h,
+            COALESCE(SUM(CASE WHEN is_absence=1                          THEN hours ELSE 0 END),0) AS absence_h
+        FROM time_entries WHERE entry_date>=? AND entry_date<=?
+    ''', (date_from, date_to)).fetchone()
     conn.close()
 
+    export_hours    = row['export_h']
+    no_export_hours = row['no_export_h']
+    week_hours      = export_hours + no_export_hours
+    absence_hours   = row['absence_h']
+
     return {
-        'week_hours': round(week_hours, 2),
-        'absence_hours': round(absence_hours, 2),
-        'total_fund': total_fund,
-        'remaining': round(total_fund - week_hours - absence_hours, 2),
-        'working_days': effective_working_days,
-        'holiday_days': holiday_days,
-        'week_start': date_from,
-        'week_end': date_to
+        'week_hours':     round(week_hours, 2),
+        'export_hours':   round(export_hours, 2),
+        'no_export_hours': round(no_export_hours, 2),
+        'absence_hours':  round(absence_hours, 2),
+        'total_fund':     total_fund,
+        'remaining':      round(total_fund - week_hours - absence_hours, 2),
+        'working_days':   effective_working_days,
+        'holiday_days':   holiday_days,
+        'week_start':     date_from,
+        'week_end':       date_to
     }

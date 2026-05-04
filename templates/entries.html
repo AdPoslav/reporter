@@ -202,21 +202,37 @@ async function applyFiltersAndLoad() {
   // Load stats for the period
   if (currentView === 'month') {
     const ms = await apiFetch(`/api/stats/month?year=${viewYear}&month=${viewMonth}`);
-    if (ms) renderViewStats(ms.month_hours, ms.absence_hours, ms.total_fund, ms.remaining, ms.working_days);
+    if (ms) renderViewStats(ms);
   } else if (currentView === 'week') {
     const ws = await apiFetch(`/api/stats/week?year=${viewYear}&week=${viewWeek}`);
-    if (ws) renderViewStats(ws.week_hours, ws.absence_hours, ws.total_fund, ws.remaining, ws.working_days);
+    if (ws) renderViewStats(ws);
   }
 }
 
-function renderViewStats(logged, absence, fund, remaining, workDays) {
+function renderViewStats(s) {
   const el = document.getElementById('view-stats');
-  const remClass = remaining < 0 ? 'stat-danger' : remaining === 0 ? 'stat-success' : '';
+  const remClass = s.remaining < 0 ? 'stat-danger' : s.remaining === 0 ? 'stat-success' : '';
   el.innerHTML = `
-    <div class="view-stat"><span class="vs-label">Logged</span><span class="vs-val">${logged.toFixed(2)}h / ${(logged/8).toFixed(2)} MD</span></div>
-    <div class="view-stat"><span class="vs-label">Absence</span><span class="vs-val">${absence.toFixed(2)}h</span></div>
-    <div class="view-stat"><span class="vs-label">Fund</span><span class="vs-val">${fund}h (${workDays}d)</span></div>
-    <div class="view-stat"><span class="vs-label">Remaining</span><span class="vs-val ${remClass}">${remaining.toFixed(2)}h / ${(remaining/8).toFixed(2)} MD</span></div>
+    <div class="view-stat">
+      <span class="vs-label">Logged (export)</span>
+      <span class="vs-val">${s.export_hours.toFixed(2)}h <span class="vs-sub">/ ${(s.export_hours/8).toFixed(2)} MD</span></span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Logged (no export)</span>
+      <span class="vs-val">${s.no_export_hours.toFixed(2)}h <span class="vs-sub">/ ${(s.no_export_hours/8).toFixed(2)} MD</span></span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Absence</span>
+      <span class="vs-val">${s.absence_hours.toFixed(2)}h</span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Fund</span>
+      <span class="vs-val">${s.total_fund}h <span class="vs-sub">(${s.working_days}d)</span></span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Remaining</span>
+      <span class="vs-val ${remClass}">${s.remaining.toFixed(2)}h <span class="vs-sub">/ ${(s.remaining/8).toFixed(2)} MD</span></span>
+    </div>
   `;
 }
 
@@ -233,23 +249,25 @@ function renderEntriesPage(entries) {
     const d = new Date(e.entry_date);
     const iso = getISOWeek(d);
     const wKey = `${iso.year}-W${String(iso.week).padStart(2,'0')}`;
-    if (!weeks[wKey]) weeks[wKey] = { label: `Week ${iso.week}, ${iso.year}`, days: {}, totalH: 0, absH: 0 };
+    if (!weeks[wKey]) weeks[wKey] = { label: `Week ${iso.week}, ${iso.year}`, days: {}, expH: 0, noExpH: 0, absH: 0 };
     const wk = weeks[wKey];
-    if (!wk.days[e.entry_date]) wk.days[e.entry_date] = { entries: [], totalH: 0, absH: 0 };
-    wk.days[e.entry_date].entries.push(e);
-    if (e.is_absence) { wk.days[e.entry_date].absH += e.hours; wk.absH += e.hours; }
-    else              { wk.days[e.entry_date].totalH += e.hours; wk.totalH += e.hours; }
+    if (!wk.days[e.entry_date]) wk.days[e.entry_date] = { entries: [], expH: 0, noExpH: 0, absH: 0 };
+    const day = wk.days[e.entry_date];
+    day.entries.push(e);
+    if (e.is_absence)                              { day.absH   += e.hours; wk.absH   += e.hours; }
+    else if (e.include_in_export)                  { day.expH   += e.hours; wk.expH   += e.hours; }
+    else                                           { day.noExpH += e.hours; wk.noExpH += e.hours; }
   });
 
   let html = '';
   Object.entries(weeks).forEach(([wKey, wk]) => {
+    const wkTotalH = wk.expH + wk.noExpH;
     // Build per-day rows with subheaders
     let tableRows = '';
     const sortedDays = Object.keys(wk.days).sort();
     sortedDays.forEach(dateStr => {
       const day = wk.days[dateStr];
-      const totalDay = day.totalH + day.absH;
-      const mdDay = (day.totalH / 8).toFixed(2);
+      const dayTotalH = day.expH + day.noExpH;
       tableRows += `
         <tr class="day-subheader-row">
           <td></td>
@@ -257,8 +275,12 @@ function renderEntriesPage(entries) {
             <span class="day-subheader-date">${fmtDate(dateStr)}</span>
           </td>
           <td colspan="2">
-            <span class="day-subheader-total">${day.totalH.toFixed(2)}h / ${mdDay} MD</span>
-            ${day.absH > 0 ? `<span class="badge-absence" style="margin-left:6px">${day.absH.toFixed(2)}h absence</span>` : ''}
+            <span class="day-subheader-total">${dayTotalH.toFixed(2)}h / ${(dayTotalH/8).toFixed(2)} MD</span>
+            <span class="exp-split">
+              <span class="exp-yes" title="Goes to export">✓ ${day.expH.toFixed(2)}h</span>
+              ${day.noExpH > 0 ? `<span class="exp-no" title="Not in export">✗ ${day.noExpH.toFixed(2)}h</span>` : ''}
+              ${day.absH   > 0 ? `<span class="badge-absence">abs ${day.absH.toFixed(2)}h</span>` : ''}
+            </span>
           </td>
           <td colspan="4"></td>
         </tr>`;
@@ -310,8 +332,12 @@ function renderEntriesPage(entries) {
         <div class="week-header">
           <span class="week-title">${wk.label}</span>
           <div class="week-totals">
-            <span>${wk.totalH.toFixed(2)}h / ${(wk.totalH/8).toFixed(2)} MD</span>
-            ${wk.absH > 0 ? `<span class="badge-absence">${wk.absH.toFixed(2)}h absence</span>` : ''}
+            <span class="wk-total-val">${wkTotalH.toFixed(2)}h / ${(wkTotalH/8).toFixed(2)} MD</span>
+            <span class="exp-split">
+              <span class="exp-yes" title="Goes to export">✓ ${wk.expH.toFixed(2)}h</span>
+              ${wk.noExpH > 0 ? `<span class="exp-no" title="Not in export">✗ ${wk.noExpH.toFixed(2)}h</span>` : ''}
+              ${wk.absH   > 0 ? `<span class="badge-absence">abs ${wk.absH.toFixed(2)}h</span>` : ''}
+            </span>
           </div>
         </div>
         <table class="data-table">

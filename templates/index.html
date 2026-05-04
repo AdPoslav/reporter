@@ -133,7 +133,8 @@ async function loadDashboardStats() {
   const h2md = h => `${h.toFixed(2)}h / ${(h/8).toFixed(2)} MD`;
 
   setText('stat-month-hours', `${ms.month_hours.toFixed(2)} h`);
-  setText('stat-month-md',    `${(ms.month_hours/8).toFixed(2)} MD`);
+  setText('stat-month-md',
+    `✓ ${ms.export_hours.toFixed(2)}h export  ✗ ${ms.no_export_hours.toFixed(2)}h no-export`);
   setText('stat-absence',     `${ms.absence_hours.toFixed(2)} h`);
   setText('stat-absence-md',  `${(ms.absence_hours/8).toFixed(2)} MD`);
   setText('stat-fund',        `${ms.total_fund} h`);
@@ -162,7 +163,8 @@ async function loadWeekStats() {
   if (!ws) return;
   document.getElementById('week-range').textContent = `${ws.week_start} – ${ws.week_end}`;
   setText('stat-week-hours',       `${ws.week_hours.toFixed(2)} h`);
-  setText('stat-week-md',          `${(ws.week_hours/8).toFixed(2)} MD`);
+  setText('stat-week-md',
+    `✓ ${ws.export_hours.toFixed(2)}h export  ✗ ${ws.no_export_hours.toFixed(2)}h no-export`);
   setText('stat-week-fund',        `${ws.total_fund} h`);
   setText('stat-week-days',        `${ws.working_days} working days`);
   const rem = ws.remaining;
