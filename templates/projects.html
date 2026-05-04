@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Projects</h1>
+    <p class="page-subtitle">Manage projects and their billing codes</p>
+  </div>
+  <button class="btn btn-primary" onclick="openProjectModal()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Add Project
+  </button>
+</div>
+
+<div id="projects-list"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allProjects = [];
+
+async function loadProjects() {
+  allProjects = await apiFetch('/api/projects') || [];
+  renderProjects();
+}
+
+function renderProjects() {
+  const container = document.getElementById('projects-list');
+  if (!allProjects.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <p>No projects yet. Create your first project to get started.</p>
+      </div>`;
+    return;
+  }
+  container.innerHTML = allProjects.map(p => `
+    <div class="project-panel" id="project-panel-${p.id}">
+      <div class="project-panel-header">
+        <div class="project-panel-info">
+          <div class="project-panel-name">${escHtml(p.name)}</div>
+          <div class="project-panel-code">${escHtml(p.code)}</div>
+        </div>
+        <div class="project-panel-actions">
+          <button class="btn btn-sm btn-outline" onclick="openProjectModal(${p.id})">Edit</button>
+          <button class="btn btn-sm btn-danger-outline" onclick="deleteProject(${p.id}, '${escHtml(p.name).replace(/'/g,"\\'")}')">Delete</button>
+        </div>
+      </div>
+
+      <div class="codes-section">
+        <div class="codes-header">
+          <span class="codes-title">Billing Codes</span>
+          <button class="btn btn-sm btn-outline" onclick="openCodeModal(${p.id})">+ Add Code</button>
+        </div>
+        ${p.codes.length ? `
+        <table class="codes-table">
+          <thead><tr><th>Code</th><th>Label</th><th></th></tr></thead>
+          <tbody>
+            ${p.codes.map(c => `
+            <tr>
+              <td><code class="code-chip">${escHtml(c.code)}</code></td>
+              <td>${escHtml(c.label)}</td>
+              <td class="td-actions">
+                <button class="btn-icon" title="Edit" onclick="openCodeModal(${p.id}, ${c.id}, '${escHtml(c.code).replace(/'/g,"\\'")}', '${escHtml(c.label).replace(/'/g,"\\'")}')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-icon-danger" title="Delete" onclick="deleteCode(${p.id}, ${c.id}, '${escHtml(c.code).replace(/'/g,"\\'")}')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+                    <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                  </svg>
+                </button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>` : '<p class="codes-empty">No codes yet. Add a billing code to this project.</p>'}
+      </div>
+    </div>`).join('');
+}
+
+// ── Project modal ──────────────────────────────────────────────────────────
+
+function openProjectModal(pid) {
+  const proj = pid ? allProjects.find(p => p.id === pid) : null;
+  const title = proj ? 'Edit Project' : 'New Project';
+  openModal(title, `
+    <form id="project-form" onsubmit="saveProject(event, ${pid || 'null'})">
+      <div class="form-group">
+        <label>Project Name *</label>
+        <input type="text" name="name" required value="${proj ? escHtml(proj.name) : ''}" placeholder="e.g. TFGP"/>
+      </div>
+      <div class="form-group">
+        <label>Main Project Code *</label>
+        <input type="text" name="code" required value="${proj ? escHtml(proj.code) : ''}" placeholder="e.g. K.003518"/>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">${proj ? 'Save Changes' : 'Create Project'}</button>
+      </div>
+    </form>`);
+}
+
+async function saveProject(e, pid) {
+  e.preventDefault();
+  const form = e.target;
+  const data = { name: form.name.value, code: form.code.value };
+  const url  = pid ? `/api/projects/${pid}` : '/api/projects';
+  const method = pid ? 'PUT' : 'POST';
+  const res = await apiFetch(url, { method, body: JSON.stringify(data) });
+  if (res && res.success !== false) {
+    closeModal();
+    showToast(pid ? 'Project updated' : 'Project created');
+    loadProjects();
+  }
+}
+
+async function deleteProject(pid, name) {
+  if (!confirm(`Delete project "${name}"? This will also remove all its codes. Time entries will be kept but unlinked.`)) return;
+  await apiFetch(`/api/projects/${pid}`, { method: 'DELETE' });
+  showToast('Project deleted');
+  loadProjects();
+}
+
+// ── Code modal ─────────────────────────────────────────────────────────────
+
+function openCodeModal(pid, cid, code, label) {
+  const isEdit = !!cid;
+  openModal(isEdit ? 'Edit Code' : 'Add Billing Code', `
+    <form id="code-form" onsubmit="saveCode(event, ${pid}, ${cid || 'null'})">
+      <div class="form-group">
+        <label>Code *</label>
+        <input type="text" name="code" required value="${code ? escHtml(code) : ''}" placeholder="e.g. K.003518.001.002"/>
+      </div>
+      <div class="form-group">
+        <label>Label *</label>
+        <input type="text" name="label" required value="${label ? escHtml(label) : ''}" placeholder="e.g. Support"/>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">${isEdit ? 'Save Changes' : 'Add Code'}</button>
+      </div>
+    </form>`);
+}
+
+async function saveCode(e, pid, cid) {
+  e.preventDefault();
+  const form = e.target;
+  const data = { code: form.code.value, label: form.label.value };
+  const url    = cid ? `/api/projects/${pid}/codes/${cid}` : `/api/projects/${pid}/codes`;
+  const method = cid ? 'PUT' : 'POST';
+  const res = await apiFetch(url, { method, body: JSON.stringify(data) });
+  if (res && res.success !== false) {
+    closeModal();
+    showToast(cid ? 'Code updated' : 'Code added');
+    loadProjects();
+  }
+}
+
+async function deleteCode(pid, cid, code) {
+  if (!confirm(`Delete code "${code}"?`)) return;
+  await apiFetch(`/api/projects/${pid}/codes/${cid}`, { method: 'DELETE' });
+  showToast('Code deleted');
+  loadProjects();
+}
+
+document.addEventListener('DOMContentLoaded', loadProjects);
+</script>
+{% endblock %}

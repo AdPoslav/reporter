@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p class="page-subtitle">Configure your profile and export identity</p>
+  </div>
+</div>
+
+<div class="settings-layout">
+  <div class="card settings-card">
+    <h2 class="card-title">User Profile</h2>
+    <p class="card-desc">This information is used in generated export filenames and the Work-ID field in XLS exports.</p>
+
+    <form id="settings-form" onsubmit="saveSettings(event)">
+      <div class="form-row">
+        <div class="form-group">
+          <label>First Name *</label>
+          <input type="text" name="first_name" required value="{{ first_name }}" placeholder="e.g. John"/>
+        </div>
+        <div class="form-group">
+          <label>Last Name * <span class="label-hint">(used in export filename)</span></label>
+          <input type="text" name="last_name" required value="{{ last_name }}" placeholder="e.g. Smith"/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Work-ID * <span class="label-hint">(goes into column A of every exported row)</span></label>
+        <input type="text" name="work_id" required value="{{ work_id }}" placeholder="e.g. EMP12345"/>
+        <span class="form-hint">This is the employee identifier required by the external company's SAP system.</span>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card settings-card">
+    <h2 class="card-title">Export Filename Format</h2>
+    <div class="filename-preview" id="filename-preview">
+      <span class="filename-text" id="filename-example">Smith_05_2026_ProjectName.xls</span>
+    </div>
+    <ul class="format-legend">
+      <li><strong>LastName</strong> — your last name from above</li>
+      <li><strong>MM</strong> — two-digit month (e.g. 05)</li>
+      <li><strong>YYYY</strong> — four-digit year (e.g. 2026)</li>
+      <li><strong>ProjectName</strong> — the name of each project</li>
+    </ul>
+  </div>
+
+  <div class="card settings-card">
+    <h2 class="card-title">Export Column Mapping</h2>
+    <table class="info-table">
+      <thead><tr><th>Column</th><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>A</td><td>Work-ID</td><td>Your Work-ID from above</td></tr>
+        <tr><td>B</td><td>WORKDATE</td><td>Entry date in DD-MM-YYYY format</td></tr>
+        <tr><td>D</td><td>/PPA/LSTNR</td><td>81001 (static)</td></tr>
+        <tr><td>E</td><td>/PPA/MENGE</td><td>Hours as decimal (e.g. 0.50 = 30 min)</td></tr>
+        <tr><td>G</td><td>RPROJ</td><td>Billing code (e.g. K.003518.001.002)</td></tr>
+        <tr><td>W</td><td>LTXA1</td><td>[TICKET] Description or just Description</td></tr>
+        <tr><td>Z</td><td>/PPA/MAFAZ1</td><td>X (always, for external billing)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveSettings(e) {
+  e.preventDefault();
+  const form = e.target;
+  const data = {
+    first_name: form.first_name.value.trim(),
+    last_name:  form.last_name.value.trim(),
+    work_id:    form.work_id.value.trim(),
+  };
+  const res = await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) });
+  if (res && res.success) {
+    showToast('Settings saved');
+    updateSidebarUser(data.first_name, data.last_name);
+    updateFilenameExample(data.last_name);
+  }
+}
+
+function updateFilenameExample(lastName) {
+  const now = new Date();
+  const mm   = String(now.getMonth()+1).padStart(2,'0');
+  const yyyy = now.getFullYear();
+  const name = lastName || 'LastName';
+  document.getElementById('filename-example').textContent = `${name}_${mm}_${yyyy}_ProjectName.xls`;
+}
+
+document.getElementById('settings-form').last_name.addEventListener('input', function() {
+  updateFilenameExample(this.value.trim());
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  updateFilenameExample(document.querySelector('[name="last_name"]').value);
+});
+</script>
+{% endblock %}

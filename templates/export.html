@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Export{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Export</h1>
+    <p class="page-subtitle">Generate XLS reports from your time entries</p>
+  </div>
+</div>
+
+<div class="export-layout">
+  <!-- Config panel -->
+  <div class="card export-config-card">
+    <h2 class="card-title">Export Settings</h2>
+
+    <div class="form-group">
+      <label>Month</label>
+      <div class="month-picker">
+        <select id="exp-month">
+          {% for i in range(1,13) %}
+          <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>
+            {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][i-1] }}
+          </option>
+          {% endfor %}
+        </select>
+        <input type="number" id="exp-year" value="{{ current_year }}" min="2020" max="2099" style="width:90px"/>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Project (optional — leave empty to export all)</label>
+      <select id="exp-project">
+        <option value="">All projects</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>
+        <input type="checkbox" id="exp-use-selection" onchange="toggleSelectionMode()"/>
+        Export only selected rows (from the preview below)
+      </label>
+    </div>
+
+    <button class="btn btn-primary btn-block" onclick="runExport()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Generate Export
+    </button>
+
+    <div id="export-result" class="export-result hidden"></div>
+  </div>
+
+  <!-- Preview panel -->
+  <div class="card export-preview-card">
+    <div class="card-header-row">
+      <h2 class="card-title">Preview</h2>
+      <div>
+        <button class="btn btn-sm btn-outline" onclick="selectAll()">Select all</button>
+        <button class="btn btn-sm btn-outline" onclick="deselectAll()">Deselect all</button>
+        <button class="btn btn-sm btn-outline" onclick="loadPreview()">Refresh</button>
+      </div>
+    </div>
+    <div id="export-preview">
+      <div class="loading-placeholder">Select a month and click Refresh to preview entries.</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let previewEntries = [];
+let selectedExportIds = new Set();
+
+function toggleSelectionMode() {
+  const use = document.getElementById('exp-use-selection').checked;
+  document.querySelectorAll('.exp-row-cb').forEach(cb => {
+    cb.parentElement.parentElement.style.opacity = use ? '1' : '1';
+    cb.disabled = !use;
+  });
+}
+
+function selectAll()   { selectedExportIds = new Set(previewEntries.map(e=>e.id)); refreshCheckboxes(); }
+function deselectAll() { selectedExportIds.clear(); refreshCheckboxes(); }
+function refreshCheckboxes() {
+  document.querySelectorAll('.exp-row-cb').forEach(cb => {
+    cb.checked = selectedExportIds.has(parseInt(cb.dataset.id));
+  });
+}
+
+function toggleExpRow(id, checked) {
+  if (checked) selectedExportIds.add(id);
+  else selectedExportIds.delete(id);
+}
+
+async function loadPreview() {
+  const month = document.getElementById('exp-month').value;
+  const year  = document.getElementById('exp-year').value;
+  const pid   = document.getElementById('exp-project').value;
+
+  const monthPad = String(month).padStart(2,'0');
+  const lastDay  = new Date(year, month, 0).getDate();
+  const params   = new URLSearchParams({
+    date_from: `${year}-${monthPad}-01`,
+    date_to:   `${year}-${monthPad}-${String(lastDay).padStart(2,'0')}`
+  });
+  if (pid) params.set('project_id', pid);
+
+  previewEntries = await apiFetch(`/api/entries?${params}`) || [];
+  selectedExportIds = new Set(previewEntries.filter(e=>!e.is_absence && e.include_in_export).map(e=>e.id));
+
+  renderPreview();
+}
+
+function renderPreview() {
+  const container = document.getElementById('export-preview');
+  const exportable = previewEntries.filter(e => !e.is_absence);
+
+  if (!exportable.length) {
+    container.innerHTML = '<div class="empty-state"><p>No exportable entries for this period.</p></div>';
+    return;
+  }
+
+  // Group by project
+  const byProject = {};
+  exportable.forEach(e => {
+    const key = e.project_id || 'none';
+    if (!byProject[key]) byProject[key] = { name: e.project_name || '—', entries: [] };
+    byProject[key].entries.push(e);
+  });
+
+  let html = '';
+  Object.entries(byProject).forEach(([pid, grp]) => {
+    const total = grp.entries.reduce((s,e)=>s+e.hours,0);
+    html += `
+      <div class="export-project-group">
+        <div class="export-group-header">
+          <strong>${escHtml(grp.name)}</strong>
+          <span>${total.toFixed(2)}h / ${(total/8).toFixed(2)} MD</span>
+        </div>
+        <table class="data-table">
+          <thead><tr>
+            <th style="width:32px"><input type="checkbox" onchange="grpToggle('${pid}',this.checked)"/></th>
+            <th>Date</th><th>Code</th><th>Hours</th><th>MD</th><th>Ticket</th><th>Description</th><th>In export</th>
+          </tr></thead>
+          <tbody>
+            ${grp.entries.map(e => `
+            <tr class="${selectedExportIds.has(e.id)?'':'row-excluded'}">
+              <td><input type="checkbox" class="exp-row-cb" data-id="${e.id}"
+                   ${selectedExportIds.has(e.id)?'checked':''}
+                   onchange="toggleExpRow(${e.id}, this.checked); this.closest('tr').classList.toggle('row-excluded',!this.checked)"/></td>
+              <td>${e.entry_date}</td>
+              <td><code class="code-chip-sm">${escHtml(e.entry_code||'')}</code></td>
+              <td>${e.hours.toFixed(2)}</td>
+              <td>${(e.hours/8).toFixed(2)}</td>
+              <td>${escHtml(e.ticket||'')}</td>
+              <td class="td-desc">${escHtml(e.description||'')}</td>
+              <td>${e.include_in_export ? '<span class="badge-yes">Yes</span>' : '<span class="badge-no">No</span>'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function grpToggle(pid, checked) {
+  const grp = Object.entries({}).find;
+  document.querySelectorAll('.exp-row-cb').forEach(cb => {
+    const entry = previewEntries.find(e=>e.id===parseInt(cb.dataset.id));
+    if (!entry) return;
+    const epid = entry.project_id === null ? 'none' : String(entry.project_id);
+    if (epid === pid) {
+      cb.checked = checked;
+      toggleExpRow(parseInt(cb.dataset.id), checked);
+      cb.closest('tr').classList.toggle('row-excluded', !checked);
+    }
+  });
+}
+
+async function runExport() {
+  const month = parseInt(document.getElementById('exp-month').value);
+  const year  = parseInt(document.getElementById('exp-year').value);
+  const pid   = document.getElementById('exp-project').value;
+  const useSel = document.getElementById('exp-use-selection').checked;
+
+  const body = { year, month };
+  if (pid) body.project_id = pid;
+  if (useSel && selectedExportIds.size > 0) body.entry_ids = [...selectedExportIds];
+
+  const resultEl = document.getElementById('export-result');
+  resultEl.className = 'export-result';
+  resultEl.innerHTML = '<div class="loading-placeholder">Generating…</div>';
+
+  const res = await apiFetch('/api/export', { method: 'POST', body: JSON.stringify(body) });
+
+  if (!res || res.error) {
+    resultEl.className = 'export-result export-result-error';
+    resultEl.innerHTML = `<strong>Error:</strong> ${res ? res.error : 'Unknown error'}`;
+    return;
+  }
+
+  resultEl.className = 'export-result export-result-success';
+  resultEl.innerHTML = `
+    <strong>✓ ${res.count} file(s) generated:</strong>
+    <ul class="export-file-list">
+      ${res.files.map(f => `
+        <li>
+          <span>${escHtml(f)}</span>
+          <a href="/api/export/download/${encodeURIComponent(f)}" class="btn btn-sm btn-outline" download>Download</a>
+        </li>`).join('')}
+    </ul>`;
+}
+
+document.addEventListener('DOMContentLoaded', loadPreview);
+document.getElementById('exp-month').addEventListener('change', loadPreview);
+document.getElementById('exp-year').addEventListener('change', loadPreview);
+document.getElementById('exp-project').addEventListener('change', loadPreview);
+</script>
+{% endblock %}

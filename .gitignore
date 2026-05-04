@@ -1,0 +1,21 @@
+# Claude Code
+.claude/
+
+# Database
+timelog.db
+
+# Generated exports
+exports/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

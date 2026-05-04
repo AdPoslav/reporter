@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Time Entries{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Time Entries</h1>
+  </div>
+  <button class="btn btn-primary" onclick="openAddEntry()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Log Time
+  </button>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-card">
+  <div class="filter-row">
+    <div class="filter-group">
+      <label>View</label>
+      <div class="btn-group">
+        <button class="btn btn-sm btn-outline active" id="view-month" onclick="setView('month')">Month</button>
+        <button class="btn btn-sm btn-outline" id="view-week"  onclick="setView('week')">Week</button>
+        <button class="btn btn-sm btn-outline" id="view-day"   onclick="setView('day')">Day</button>
+      </div>
+    </div>
+
+    <div class="filter-group" id="period-nav-wrap">
+      <label>Period</label>
+      <div class="period-nav-inline">
+        <button class="period-btn" onclick="shiftPeriod(-1)">&#8592;</button>
+        <span id="entries-period-label" class="period-label-inline"></span>
+        <button class="period-btn" onclick="shiftPeriod(1)">&#8594;</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <label>Project</label>
+      <select id="filter-project" onchange="applyFiltersAndLoad()">
+        <option value="">All projects</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Code</label>
+      <select id="filter-code" onchange="applyFiltersAndLoad()">
+        <option value="">All codes</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Ticket</label>
+      <input type="text" id="filter-ticket" placeholder="e.g. PROJ-123" oninput="debounceLoad()"/>
+    </div>
+
+    <div class="filter-group">
+      <label>Description</label>
+      <input type="text" id="filter-desc" placeholder="Search…" oninput="debounceLoad()"/>
+    </div>
+
+    <div class="filter-group filter-group-end">
+      <button class="btn btn-sm btn-outline" onclick="clearFilters()">Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk actions -->
+<div class="bulk-bar" id="bulk-bar" style="display:none">
+  <span id="bulk-count">0 selected</span>
+  <button class="btn btn-sm btn-outline" onclick="bulkSetExport(1)">Include in export</button>
+  <button class="btn btn-sm btn-outline" onclick="bulkSetExport(0)">Exclude from export</button>
+  <button class="btn btn-sm btn-outline" onclick="clearSelection()">Deselect all</button>
+</div>
+
+<!-- Stats for current view -->
+<div class="view-stats" id="view-stats"></div>
+
+<!-- Entries -->
+<div id="entries-container">
+  <div class="loading-placeholder">Loading…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PROJECTS_DATA = {{ projects | tojson }};
+let currentView   = 'month';
+let viewYear      = {{ current_year }};
+let viewMonth     = {{ current_month }};
+let viewWeek      = {{ current_week }};
+let viewDay       = '{{ today }}';
+let debounceTimer = null;
+let selectedIds   = new Set();
+
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+function setView(v) {
+  currentView = v;
+  ['month','week','day'].forEach(x => {
+    document.getElementById(`view-${x}`).classList.toggle('active', x===v);
+  });
+  updatePeriodLabel();
+  applyFiltersAndLoad();
+}
+
+function updatePeriodLabel() {
+  let label = '';
+  if (currentView === 'month') label = `${MONTH_NAMES[viewMonth-1]} ${viewYear}`;
+  else if (currentView === 'week') label = `Week ${viewWeek}, ${viewYear}`;
+  else label = viewDay;
+  document.getElementById('entries-period-label').textContent = label;
+}
+
+function shiftPeriod(delta) {
+  if (currentView === 'month') {
+    viewMonth += delta;
+    if (viewMonth > 12) { viewMonth = 1; viewYear++; }
+    if (viewMonth < 1)  { viewMonth = 12; viewYear--; }
+  } else if (currentView === 'week') {
+    viewWeek += delta;
+    if (viewWeek > 52) { viewWeek = 1; viewYear++; }
+    if (viewWeek < 1)  { viewWeek = 52; viewYear--; }
+  } else {
+    const d = new Date(viewDay);
+    d.setDate(d.getDate() + delta);
+    viewDay = d.toISOString().slice(0,10);
+  }
+  updatePeriodLabel();
+  applyFiltersAndLoad();
+}
+
+function getDateRange() {
+  if (currentView === 'month') {
+    const last = new Date(viewYear, viewMonth, 0).getDate();
+    return { from: `${viewYear}-${String(viewMonth).padStart(2,'0')}-01`,
+             to:   `${viewYear}-${String(viewMonth).padStart(2,'0')}-${String(last).padStart(2,'0')}` };
+  } else if (currentView === 'week') {
+    const jan4 = new Date(viewYear, 0, 4);
+    const weekStart = new Date(jan4);
+    weekStart.setDate(jan4.getDate() - jan4.getDay() + 1 + (viewWeek-1)*7);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+    return { from: weekStart.toISOString().slice(0,10), to: weekEnd.toISOString().slice(0,10) };
+  } else {
+    return { from: viewDay, to: viewDay };
+  }
+}
+
+function debounceLoad() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(applyFiltersAndLoad, 400);
+}
+
+function clearFilters() {
+  document.getElementById('filter-project').value = '';
+  document.getElementById('filter-code').value = '';
+  document.getElementById('filter-ticket').value = '';
+  document.getElementById('filter-desc').value = '';
+  updateCodeDropdown('');
+  applyFiltersAndLoad();
+}
+
+function updateCodeDropdown(projectId) {
+  const sel = document.getElementById('filter-code');
+  sel.innerHTML = '<option value="">All codes</option>';
+  if (!projectId) return;
+  const proj = PROJECTS_DATA.find(p => p.id == projectId);
+  if (proj) {
+    proj.codes.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = `${c.code} — ${c.label}`;
+      sel.appendChild(o);
+    });
+  }
+}
+
+document.getElementById('filter-project').addEventListener('change', function() {
+  updateCodeDropdown(this.value);
+  applyFiltersAndLoad();
+});
+
+async function applyFiltersAndLoad() {
+  updatePeriodLabel();
+  const range = getDateRange();
+  const params = new URLSearchParams({ date_from: range.from, date_to: range.to });
+  const pv = document.getElementById('filter-project').value;
+  const cv = document.getElementById('filter-code').value;
+  const tv = document.getElementById('filter-ticket').value;
+  const dv = document.getElementById('filter-desc').value;
+  if (pv) params.set('project_id', pv);
+  if (cv) params.set('code_id', cv);
+  if (tv) params.set('ticket', tv);
+  if (dv) params.set('description', dv);
+
+  const entries = await apiFetch(`/api/entries?${params}`);
+  renderEntriesPage(entries || []);
+
+  // Load stats for the period
+  if (currentView === 'month') {
+    const ms = await apiFetch(`/api/stats/month?year=${viewYear}&month=${viewMonth}`);
+    if (ms) renderViewStats(ms.month_hours, ms.absence_hours, ms.total_fund, ms.remaining, ms.working_days);
+  } else if (currentView === 'week') {
+    const ws = await apiFetch(`/api/stats/week?year=${viewYear}&week=${viewWeek}`);
+    if (ws) renderViewStats(ws.week_hours, ws.absence_hours, ws.total_fund, ws.remaining, ws.working_days);
+  }
+}
+
+function renderViewStats(logged, absence, fund, remaining, workDays) {
+  const el = document.getElementById('view-stats');
+  const remClass = remaining < 0 ? 'stat-danger' : remaining === 0 ? 'stat-success' : '';
+  el.innerHTML = `
+    <div class="view-stat"><span class="vs-label">Logged</span><span class="vs-val">${logged.toFixed(2)}h / ${(logged/8).toFixed(2)} MD</span></div>
+    <div class="view-stat"><span class="vs-label">Absence</span><span class="vs-val">${absence.toFixed(2)}h</span></div>
+    <div class="view-stat"><span class="vs-label">Fund</span><span class="vs-val">${fund}h (${workDays}d)</span></div>
+    <div class="view-stat"><span class="vs-label">Remaining</span><span class="vs-val ${remClass}">${remaining.toFixed(2)}h / ${(remaining/8).toFixed(2)} MD</span></div>
+  `;
+}
+
+function renderEntriesPage(entries) {
+  const container = document.getElementById('entries-container');
+  if (!entries.length) {
+    container.innerHTML = '<div class="empty-state"><p>No entries for this period.</p></div>';
+    return;
+  }
+
+  // Group by week
+  const weeks = {};
+  entries.forEach(e => {
+    const d = new Date(e.entry_date);
+    const iso = getISOWeek(d);
+    const key = `${iso.year}-W${String(iso.week).padStart(2,'0')}`;
+    if (!weeks[key]) weeks[key] = { label: `Week ${iso.week}, ${iso.year}`, entries: [], totalH: 0, absH: 0 };
+    weeks[key].entries.push(e);
+    if (e.is_absence) weeks[key].absH += e.hours;
+    else weeks[key].totalH += e.hours;
+  });
+
+  let html = '';
+  Object.entries(weeks).forEach(([key, wk]) => {
+    const rem = 0; // simplified in grouped view
+    html += `
+      <div class="week-group">
+        <div class="week-header">
+          <span class="week-title">${wk.label}</span>
+          <div class="week-totals">
+            <span>${wk.totalH.toFixed(2)}h logged</span>
+            ${wk.absH > 0 ? `<span class="badge-absence">${wk.absH.toFixed(2)}h absence</span>` : ''}
+          </div>
+        </div>
+        ${renderEntriesTable(wk.entries, false)}
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  if (selectedIds.size > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('bulk-count').textContent = `${selectedIds.size} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function toggleSelect(id, checked) {
+  if (checked) selectedIds.add(id);
+  else selectedIds.delete(id);
+  updateBulkBar();
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('.entry-checkbox').forEach(cb => cb.checked = false);
+  updateBulkBar();
+}
+
+async function bulkSetExport(val) {
+  if (!selectedIds.size) return;
+  await apiFetch('/api/entries/bulk-toggle-export', {
+    method: 'POST',
+    body: JSON.stringify({ ids: [...selectedIds], value: val })
+  });
+  showToast(`Updated ${selectedIds.size} entries`);
+  clearSelection();
+  applyFiltersAndLoad();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updatePeriodLabel();
+  applyFiltersAndLoad();
+});
+</script>
+{% endblock %}
