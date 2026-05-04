@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Holidays{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Holidays</h1>
+    <p class="page-subtitle">Public holidays are subtracted from the working time fund</p>
+  </div>
+  <button class="btn btn-primary" onclick="openHolidayModal()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Add Holiday
+  </button>
+</div>
+
+<div class="card">
+  <div id="holidays-list">
+    <div class="loading-placeholder">Loading…</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+async function loadHolidays() {
+  const holidays = await apiFetch('/api/holidays') || [];
+  renderHolidays(holidays);
+}
+
+function renderHolidays(holidays) {
+  const container = document.getElementById('holidays-list');
+  if (!holidays.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <p>No holidays defined yet. Add public holidays to reduce the working time fund on those days.</p>
+      </div>`;
+    return;
+  }
+
+  // Group by month
+  const byMonth = {};
+  holidays.forEach(h => {
+    const k = h.month;
+    if (!byMonth[k]) byMonth[k] = [];
+    byMonth[k].push(h);
+  });
+
+  let html = '<table class="data-table">';
+  html += `<thead><tr>
+    <th>Date</th><th>Description</th><th>Repeats annually</th><th>Year</th><th></th>
+  </tr></thead><tbody>`;
+
+  holidays.forEach(h => {
+    const dayStr  = String(h.day).padStart(2, '0');
+    const monStr  = String(h.month).padStart(2, '0');
+    const dateStr = h.is_recurring
+      ? `${dayStr}. ${MONTH_NAMES[h.month - 1]}`
+      : `${dayStr}. ${MONTH_NAMES[h.month - 1]} ${h.year}`;
+
+    html += `<tr>
+      <td><strong>${dateStr}</strong></td>
+      <td>${escHtml(h.description)}</td>
+      <td>${h.is_recurring
+        ? '<span class="badge-yes">Yes — every year</span>'
+        : '<span class="badge-no">No — one-time</span>'}</td>
+      <td>${h.is_recurring ? '<span style="color:#94a3b8">—</span>' : h.year}</td>
+      <td>
+        <div class="td-actions">
+          <button class="btn-icon" title="Edit"
+            onclick="openHolidayModal(${h.id},${h.day},${h.month},${h.year||'null'},'${escHtml(h.description).replace(/'/g,"\\'")}',${h.is_recurring})">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button class="btn-icon btn-icon-danger" title="Delete"
+            onclick="deleteHoliday(${h.id}, '${escHtml(h.description).replace(/'/g,"\\'")}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function openHolidayModal(hid, day, month, year, description, isRecurring) {
+  const isEdit = !!hid;
+  const thisYear = new Date().getFullYear();
+  const recurChecked = (isEdit && isRecurring) || (!isEdit) ? 'checked' : '';
+
+  openModal(isEdit ? 'Edit Holiday' : 'Add Holiday', `
+    <form id="holiday-form" onsubmit="saveHoliday(event, ${hid || 'null'})">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Day *</label>
+          <input type="number" name="day" required min="1" max="31"
+                 value="${day || ''}" placeholder="1–31"/>
+        </div>
+        <div class="form-group">
+          <label>Month *</label>
+          <select name="month" required>
+            ${MONTH_NAMES.map((m,i) => `<option value="${i+1}" ${(month && month==i+1)||(!month && i==0)?'selected':''}>${m}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Description *</label>
+        <input type="text" name="description" required
+               value="${description || ''}" placeholder="e.g. Christmas Day"/>
+      </div>
+
+      <div class="form-group">
+        <div class="toggle-row">
+          <input type="checkbox" id="hol-recurring" name="is_recurring"
+                 ${recurChecked} onchange="toggleYearField(this.checked)"/>
+          <label for="hol-recurring" style="margin:0;font-weight:500">
+            Repeats every year (periodic)
+          </label>
+        </div>
+        <span class="form-hint">If checked, this holiday applies to all years regardless of the year field.</span>
+      </div>
+
+      <div class="form-group" id="year-field" style="${recurChecked ? 'display:none' : ''}">
+        <label>Year *</label>
+        <input type="number" name="year" min="2020" max="2099"
+               value="${year || thisYear}" placeholder="${thisYear}"/>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">${isEdit ? 'Save Changes' : 'Add Holiday'}</button>
+      </div>
+    </form>`);
+}
+
+function toggleYearField(isRecurring) {
+  document.getElementById('year-field').style.display = isRecurring ? 'none' : '';
+  const yearInput = document.querySelector('[name="year"]');
+  if (yearInput) yearInput.required = !isRecurring;
+}
+
+async function saveHoliday(e, hid) {
+  e.preventDefault();
+  const form = e.target;
+  const isRecurring = form.is_recurring.checked;
+  const data = {
+    day:          parseInt(form.day.value),
+    month:        parseInt(form.month.value),
+    year:         isRecurring ? null : parseInt(form.year.value),
+    description:  form.description.value.trim(),
+    is_recurring: isRecurring,
+  };
+
+  const url    = hid ? `/api/holidays/${hid}` : '/api/holidays';
+  const method = hid ? 'PUT' : 'POST';
+  const res = await apiFetch(url, { method, body: JSON.stringify(data) });
+  if (res && res.success !== false) {
+    closeModal();
+    showToast(hid ? 'Holiday updated' : 'Holiday added');
+    loadHolidays();
+  }
+}
+
+async function deleteHoliday(hid, desc) {
+  if (!confirm(`Delete holiday "${desc}"?`)) return;
+  await apiFetch(`/api/holidays/${hid}`, { method: 'DELETE' });
+  showToast('Holiday deleted');
+  loadHolidays();
+}
+
+document.addEventListener('DOMContentLoaded', loadHolidays);
+</script>
+{% endblock %}

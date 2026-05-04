@@ -53,6 +53,15 @@ def init_db():
             FOREIGN KEY (project_code_id) REFERENCES project_codes(id) ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS holidays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            day INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            year INTEGER,
+            description TEXT NOT NULL DEFAULT '',
+            is_recurring INTEGER DEFAULT 1
+        );
+
         INSERT OR IGNORE INTO settings (key, value) VALUES ('work_id', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('first_name', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('last_name', '');
@@ -253,6 +262,67 @@ def toggle_export_flag(entry_ids, value):
     conn.close()
 
 
+# ── Holidays ──────────────────────────────────────────────────────────────────
+
+def get_all_holidays():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM holidays ORDER BY month, day, year NULLS FIRST"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def create_holiday(day, month, year, description, is_recurring):
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO holidays (day, month, year, description, is_recurring) VALUES (?,?,?,?,?)",
+        (day, month, year if not is_recurring else None, description, 1 if is_recurring else 0)
+    )
+    hid = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return hid
+
+
+def update_holiday(hid, day, month, year, description, is_recurring):
+    conn = get_db()
+    conn.execute(
+        "UPDATE holidays SET day=?, month=?, year=?, description=?, is_recurring=? WHERE id=?",
+        (day, month, year if not is_recurring else None, description, 1 if is_recurring else 0, hid)
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_holiday(hid):
+    conn = get_db()
+    conn.execute("DELETE FROM holidays WHERE id=?", (hid,))
+    conn.commit()
+    conn.close()
+
+
+def _holiday_days_in_range(date_from: datetime.date, date_to: datetime.date) -> int:
+    """Count how many holidays fall on working days within [date_from, date_to]."""
+    conn = get_db()
+    holidays = conn.execute("SELECT day, month, year, is_recurring FROM holidays").fetchall()
+    conn.close()
+
+    count = 0
+    current = date_from
+    while current <= date_to:
+        if current.weekday() < 5:  # working day
+            for h in holidays:
+                if h['month'] == current.month and h['day'] == current.day:
+                    if h['is_recurring'] or h['year'] == current.year:
+                        count += 1
+                        break
+        current += datetime.timedelta(days=1)
+    return count
+
+
+# ── Stats ──────────────────────────────────────────────────────────────────────
+
 def get_month_stats(year, month):
     month_str = f"{year:04d}-{month:02d}"
     conn = get_db()
@@ -272,7 +342,12 @@ def get_month_stats(year, month):
         1 for d in range(1, num_days + 1)
         if datetime.date(year, month, d).weekday() < 5
     )
-    total_fund = working_days * 8
+
+    date_from = datetime.date(year, month, 1)
+    date_to   = datetime.date(year, month, num_days)
+    holiday_days = _holiday_days_in_range(date_from, date_to)
+    effective_working_days = max(working_days - holiday_days, 0)
+    total_fund = effective_working_days * 8
 
     project_stats = conn.execute('''
         SELECT p.id, p.name, COALESCE(SUM(te.hours),0) AS total_hours
@@ -290,7 +365,8 @@ def get_month_stats(year, month):
         'absence_hours': round(absence_hours, 2),
         'total_fund': total_fund,
         'remaining': round(total_fund - month_hours - absence_hours, 2),
-        'working_days': working_days,
+        'working_days': effective_working_days,
+        'holiday_days': holiday_days,
         'project_stats': [dict(p) for p in project_stats]
     }
 
@@ -300,13 +376,15 @@ def get_week_stats(year, week):
     week_start = jan4 + datetime.timedelta(weeks=week - 1, days=-jan4.weekday())
     week_end = week_start + datetime.timedelta(days=6)
     date_from = week_start.strftime('%Y-%m-%d')
-    date_to = week_end.strftime('%Y-%m-%d')
+    date_to   = week_end.strftime('%Y-%m-%d')
 
     working_days = sum(
         1 for d in range(7)
         if (week_start + datetime.timedelta(days=d)).weekday() < 5
     )
-    total_fund = working_days * 8
+    holiday_days = _holiday_days_in_range(week_start, week_end)
+    effective_working_days = max(working_days - holiday_days, 0)
+    total_fund = effective_working_days * 8
 
     conn = get_db()
     week_hours = conn.execute(
@@ -324,7 +402,8 @@ def get_week_stats(year, week):
         'absence_hours': round(absence_hours, 2),
         'total_fund': total_fund,
         'remaining': round(total_fund - week_hours - absence_hours, 2),
-        'working_days': working_days,
+        'working_days': effective_working_days,
+        'holiday_days': holiday_days,
         'week_start': date_from,
         'week_end': date_to
     }

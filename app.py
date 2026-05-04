@@ -65,6 +65,52 @@ def projects_page():
     return render_template('projects.html', projects=projects)
 
 
+@app.route('/holidays')
+def holidays_page():
+    holidays = db.get_all_holidays()
+    return render_template('holidays.html', holidays=holidays)
+
+
+@app.route('/api/holidays', methods=['GET'])
+def api_holidays():
+    return jsonify(db.get_all_holidays())
+
+
+@app.route('/api/holidays', methods=['POST'])
+def api_create_holiday():
+    d = request.get_json()
+    is_recurring = bool(d.get('is_recurring', True))
+    hid = db.create_holiday(
+        day=int(d['day']),
+        month=int(d['month']),
+        year=int(d['year']) if d.get('year') and not is_recurring else None,
+        description=d['description'].strip(),
+        is_recurring=is_recurring,
+    )
+    return jsonify({'id': hid, 'success': True})
+
+
+@app.route('/api/holidays/<int:hid>', methods=['PUT'])
+def api_update_holiday(hid):
+    d = request.get_json()
+    is_recurring = bool(d.get('is_recurring', True))
+    db.update_holiday(
+        hid=hid,
+        day=int(d['day']),
+        month=int(d['month']),
+        year=int(d['year']) if d.get('year') and not is_recurring else None,
+        description=d['description'].strip(),
+        is_recurring=is_recurring,
+    )
+    return jsonify({'success': True})
+
+
+@app.route('/api/holidays/<int:hid>', methods=['DELETE'])
+def api_delete_holiday(hid):
+    db.delete_holiday(hid)
+    return jsonify({'success': True})
+
+
 @app.route('/export')
 def export_page():
     today = _today()
