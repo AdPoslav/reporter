@@ -38,7 +38,7 @@ def _format_ltxa1(ticket, description):
     return description
 
 
-def generate_export(entries, project_name, work_id, last_name, year, month):
+def generate_export(entries, project_name, project_code, work_id, first_name, last_name, year, month):
     """
     Copy the XLS template, fill data rows, hide empty columns.
     Returns (filepath, filename) or None if nothing to export.
@@ -85,12 +85,8 @@ def generate_export(entries, project_name, work_id, last_name, year, month):
         ws.write(row_idx, 25, 'X')                  # Z  /PPA/MAFAZ1  always X
         # AA–AP — empty / hidden
 
-    safe_name = (
-        project_name
-        .replace(' ', '_').replace('/', '_')
-        .replace('\\', '_').replace(':', '_')
-    )
-    filename = f"{last_name}_{month:02d}_{year}_{safe_name}.xls"
+    full_name = f"{first_name} {last_name}".strip()
+    filename = f"{full_name}_{project_code}_{month:02d}_{year}.xls"
     filepath = os.path.join(EXPORTS_DIR, filename)
     wb.save(filepath)
     return filepath, filename

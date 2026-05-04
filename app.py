@@ -298,8 +298,9 @@ def api_export():
     year  = int(d['year'])
     month = int(d['month'])
 
-    work_id   = db.get_setting('work_id')
-    last_name = db.get_setting('last_name')
+    work_id    = db.get_setting('work_id')
+    first_name = db.get_setting('first_name')
+    last_name  = db.get_setting('last_name')
     if not work_id:
         return jsonify({'error': 'Please set your Work-ID in Settings first.'}), 400
     if not last_name:
@@ -337,6 +338,7 @@ def api_export():
         if pid not in projects_map:
             projects_map[pid] = {
                 'project_name': entry['project_name'],
+                'project_code': entry['project_main_code'],
                 'entries': [],
             }
         projects_map[pid]['entries'].append(entry)
@@ -349,7 +351,9 @@ def api_export():
         result = exp.generate_export(
             entries=pdata['entries'],
             project_name=pdata['project_name'],
+            project_code=pdata['project_code'],
             work_id=work_id,
+            first_name=first_name,
             last_name=last_name,
             year=year,
             month=month,

@@ -44,10 +44,10 @@
       <span class="filename-text" id="filename-example">Smith_05_2026_ProjectName.xls</span>
     </div>
     <ul class="format-legend">
-      <li><strong>LastName</strong> — your last name from above</li>
-      <li><strong>MM</strong> — two-digit month (e.g. 05)</li>
+      <li><strong>FirstName LastName</strong> — your full name from above</li>
+      <li><strong>K.XXXXXX</strong> — main project code (e.g. K.802151)</li>
+      <li><strong>MM</strong> — two-digit month (e.g. 04)</li>
       <li><strong>YYYY</strong> — four-digit year (e.g. 2026)</li>
-      <li><strong>ProjectName</strong> — the name of each project</li>
     </ul>
   </div>
 
@@ -87,20 +87,18 @@ async function saveSettings(e) {
   }
 }
 
-function updateFilenameExample(lastName) {
-  const now = new Date();
+function updateFilenameExample() {
+  const now  = new Date();
   const mm   = String(now.getMonth()+1).padStart(2,'0');
   const yyyy = now.getFullYear();
-  const name = lastName || 'LastName';
-  document.getElementById('filename-example').textContent = `${name}_${mm}_${yyyy}_ProjectName.xls`;
+  const fn   = document.querySelector('[name="first_name"]').value.trim() || 'FirstName';
+  const ln   = document.querySelector('[name="last_name"]').value.trim()  || 'LastName';
+  document.getElementById('filename-example').textContent = `${fn} ${ln}_K.XXXXXX_${mm}_${yyyy}.xls`;
 }
 
-document.getElementById('settings-form').last_name.addEventListener('input', function() {
-  updateFilenameExample(this.value.trim());
-});
+document.querySelector('[name="first_name"]').addEventListener('input', updateFilenameExample);
+document.querySelector('[name="last_name"]').addEventListener('input',  updateFilenameExample);
 
-document.addEventListener('DOMContentLoaded', () => {
-  updateFilenameExample(document.querySelector('[name="last_name"]').value);
-});
+document.addEventListener('DOMContentLoaded', updateFilenameExample);
 </script>
 {% endblock %}
