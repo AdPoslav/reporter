@@ -40,7 +40,7 @@ function renderProjects() {
     return;
   }
   container.innerHTML = allProjects.map(p => `
-    <div class="project-panel" id="project-panel-${p.id}">
+    <div class="project-panel ${p.archived_at ? 'project-panel-archived' : ''}" id="project-panel-${p.id}">
       <div class="project-panel-header">
         <div class="project-panel-info">
           <div class="project-panel-name">${escHtml(p.name)}</div>
@@ -48,6 +48,10 @@ function renderProjects() {
         </div>
         <div class="project-panel-actions">
           <button class="btn btn-sm btn-outline" onclick="openProjectModal(${p.id})">Edit</button>
+          ${p.archived_at
+            ? `<button class="btn btn-sm btn-outline" onclick="restoreProject(${p.id})">Restore</button>`
+            : `<button class="btn btn-sm btn-outline-warning" onclick="archiveProject(${p.id}, '${escHtml(p.name).replace(/'/g,"\\'")}')">Archive</button>`
+          }
           <button class="btn btn-sm btn-danger-outline" onclick="deleteProject(${p.id}, '${escHtml(p.name).replace(/'/g,"\\'")}')">Delete</button>
         </div>
       </div>
@@ -62,11 +66,11 @@ function renderProjects() {
           <thead><tr><th>Code</th><th>Label</th><th></th></tr></thead>
           <tbody>
             ${p.codes.map(c => `
-            <tr>
-              <td><code class="code-chip">${escHtml(c.code)}</code></td>
-              <td>${escHtml(c.label)}</td>
+            <tr class="${c.deprecated ? 'code-row-deprecated' : ''}">
+              <td><code class="code-chip ${c.deprecated ? 'code-chip-deprecated' : ''}">${escHtml(c.code)}</code>${c.deprecated ? ' <span class="badge-deprecated">deprecated</span>' : ''}</td>
+              <td class="${c.deprecated ? 'text-deprecated' : ''}">${escHtml(c.label)}</td>
               <td class="td-actions">
-                <button class="btn-icon" title="Edit" onclick="openCodeModal(${p.id}, ${c.id}, '${escHtml(c.code).replace(/'/g,"\\'")}', '${escHtml(c.label).replace(/'/g,"\\'")}')">
+                <button class="btn-icon" title="Edit" onclick="openCodeModal(${p.id}, ${c.id}, '${escHtml(c.code).replace(/'/g,"\\'")}', '${escHtml(c.label).replace(/'/g,"\\'")}', ${c.deprecated ? 1 : 0})">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -131,7 +135,7 @@ async function deleteProject(pid, name) {
 
 // ── Code modal ─────────────────────────────────────────────────────────────
 
-function openCodeModal(pid, cid, code, label) {
+function openCodeModal(pid, cid, code, label, deprecated) {
   const isEdit = !!cid;
   openModal(isEdit ? 'Edit Code' : 'Add Billing Code', `
     <form id="code-form" onsubmit="saveCode(event, ${pid}, ${cid || 'null'})">
@@ -143,6 +147,12 @@ function openCodeModal(pid, cid, code, label) {
         <label>Label *</label>
         <input type="text" name="label" required value="${label ? escHtml(label) : ''}" placeholder="e.g. Support"/>
       </div>
+      <div class="form-group">
+        <div class="toggle-row">
+          <input type="checkbox" name="deprecated" id="code-deprecated" ${deprecated ? 'checked' : ''}/>
+          <label for="code-deprecated" style="margin:0">Deprecated <span class="label-hint">(kept for historical data, marked in lists)</span></label>
+        </div>
+      </div>
       <div class="form-actions">
         <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary">${isEdit ? 'Save Changes' : 'Add Code'}</button>
@@ -153,7 +163,11 @@ function openCodeModal(pid, cid, code, label) {
 async function saveCode(e, pid, cid) {
   e.preventDefault();
   const form = e.target;
-  const data = { code: form.code.value, label: form.label.value };
+  const data = {
+    code:       form.code.value,
+    label:      form.label.value,
+    deprecated: form.deprecated.checked,
+  };
   const url    = cid ? `/api/projects/${pid}/codes/${cid}` : `/api/projects/${pid}/codes`;
   const method = cid ? 'PUT' : 'POST';
   const res = await apiFetch(url, { method, body: JSON.stringify(data) });
@@ -168,6 +182,19 @@ async function deleteCode(pid, cid, code) {
   if (!confirm(`Delete code "${code}"?`)) return;
   await apiFetch(`/api/projects/${pid}/codes/${cid}`, { method: 'DELETE' });
   showToast('Code deleted');
+  loadProjects();
+}
+
+async function archiveProject(pid, name) {
+  if (!confirm(`Archive project "${name}"? It will be hidden from active lists but kept for historical data.`)) return;
+  await apiFetch(`/api/projects/${pid}/archive`, { method: 'POST' });
+  showToast('Project archived');
+  loadProjects();
+}
+
+async function restoreProject(pid) {
+  await apiFetch(`/api/projects/${pid}/restore`, { method: 'POST' });
+  showToast('Project restored');
   loadProjects();
 }
 

@@ -25,7 +25,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             code TEXT NOT NULL,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (datetime('now')),
+            archived_at TEXT DEFAULT NULL
         );
 
         CREATE TABLE IF NOT EXISTS project_codes (
@@ -34,6 +35,7 @@ def init_db():
             code TEXT NOT NULL,
             label TEXT NOT NULL,
             sort_order INTEGER DEFAULT 0,
+            deprecated INTEGER DEFAULT 0,
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
         );
 
@@ -66,7 +68,17 @@ def init_db():
         INSERT OR IGNORE INTO settings (key, value) VALUES ('first_name', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('last_name', '');
     ''')
-    conn.commit()
+    # Migration: add deprecated column to existing databases
+    try:
+        conn.execute("ALTER TABLE project_codes ADD COLUMN deprecated INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE projects ADD COLUMN archived_at TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
@@ -98,6 +110,7 @@ def get_all_projects():
             'name': p['name'],
             'code': p['code'],
             'created_at': p['created_at'],
+            'archived_at': p['archived_at'],
             'codes': [dict(c) for c in codes]
         })
     conn.close()
@@ -134,11 +147,24 @@ def delete_project(project_id):
     conn.close()
 
 
-def create_project_code(project_id, code, label, sort_order=0):
+def archive_project(project_id):
+    conn = get_db()
+    conn.execute("UPDATE projects SET archived_at = datetime('now') WHERE id = ?", (project_id,))
+    conn.commit()
+    conn.close()
+
+def restore_project(project_id):
+    conn = get_db()
+    conn.execute("UPDATE projects SET archived_at = NULL WHERE id = ?", (project_id,))
+    conn.commit()
+    conn.close()
+
+
+def create_project_code(project_id, code, label, sort_order=0, deprecated=False):
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO project_codes (project_id, code, label, sort_order) VALUES (?, ?, ?, ?)",
-        (project_id, code, label, sort_order)
+        "INSERT INTO project_codes (project_id, code, label, sort_order, deprecated) VALUES (?, ?, ?, ?, ?)",
+        (project_id, code, label, sort_order, 1 if deprecated else 0)
     )
     code_id = cursor.lastrowid
     conn.commit()
@@ -146,9 +172,12 @@ def create_project_code(project_id, code, label, sort_order=0):
     return code_id
 
 
-def update_project_code(code_id, code, label):
+def update_project_code(code_id, code, label, deprecated=False):
     conn = get_db()
-    conn.execute("UPDATE project_codes SET code = ?, label = ? WHERE id = ?", (code, label, code_id))
+    conn.execute(
+        "UPDATE project_codes SET code = ?, label = ?, deprecated = ? WHERE id = ?",
+        (code, label, 1 if deprecated else 0, code_id)
+    )
     conn.commit()
     conn.close()
 
@@ -184,7 +213,10 @@ def get_entries(filters=None):
         if filters.get('code_id'):
             query += " AND te.project_code_id = ?"
             params.append(filters['code_id'])
-        if filters.get('ticket'):
+        if filters.get('ticket_exact'):
+            query += " AND te.ticket = ?"
+            params.append(filters['ticket_exact'])
+        elif filters.get('ticket'):
             query += " AND te.ticket LIKE ?"
             params.append(f"%{filters['ticket']}%")
         if filters.get('description'):
@@ -322,6 +354,40 @@ def _holiday_days_in_range(date_from: datetime.date, date_to: datetime.date) -> 
 
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
+
+def get_day_stats(date_str=None):
+    import datetime as _dt
+    if date_str:
+        day = _dt.date.fromisoformat(date_str)
+    else:
+        day = _dt.date.today()
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(hours),0) AS h FROM time_entries WHERE entry_date=? AND is_absence=0",
+        (day.strftime('%Y-%m-%d'),)
+    ).fetchone()
+    day_hours = round(row['h'], 2)
+    holidays = conn.execute("SELECT day, month, year, is_recurring FROM holidays").fetchall()
+    conn.close()
+    is_weekend = day.weekday() >= 5
+    is_holiday = any(
+        h['month'] == day.month and h['day'] == day.day and (h['is_recurring'] or h['year'] == day.year)
+        for h in holidays
+    )
+    is_workday = not is_weekend and not is_holiday
+    fund = 8.0 if is_workday else 0.0
+    return {
+        'date': day.strftime('%Y-%m-%d'),
+        'today_hours': day_hours,
+        'fund': fund,
+        'remaining': round(fund - day_hours, 2),
+        'is_workday': is_workday,
+    }
+
+
+def get_today_stats():
+    return get_day_stats()
+
 
 def get_month_stats(year, month):
     month_str = f"{year:04d}-{month:02d}"

@@ -101,9 +101,10 @@ function buildEntryForm(entry) {
   const today = new Date().toISOString().slice(0, 10);
   const isAbsence = entry?.is_absence ? 1 : 0;
 
-  const projectsHtml = _allProjects.map(p =>
-    `<option value="${p.id}" ${entry?.project_id == p.id ? 'selected' : ''}>${escHtml(p.name)}</option>`
-  ).join('');
+  const projectsHtml = _allProjects
+    .filter(p => !p.archived_at || entry?.project_id == p.id)
+    .map(p => `<option value="${p.id}" ${entry?.project_id == p.id ? 'selected' : ''}>${escHtml(p.name)}</option>`)
+    .join('');
 
   const codesHtml = entry?.project_id
     ? buildCodesOptions(entry.project_id, entry.project_code_id)
@@ -152,8 +153,8 @@ function buildEntryForm(entry) {
     </div>
 
     <div class="form-group">
-      <label>Ticket <span class="label-hint">(optional)</span></label>
-      <input type="text" id="ef-ticket" placeholder="e.g. PROJ-1234" value="${escHtml(entry?.ticket || '')}"/>
+      <label>Ticket <span class="label-hint">(optional, comma-separated for multiple)</span></label>
+      <input type="text" id="ef-ticket" placeholder="e.g. PROJ-1234 or PROJ-1, PROJ-2, PROJ-3" value="${escHtml(entry?.ticket || '')}"/>
     </div>
 
     <div class="form-group">
@@ -215,9 +216,12 @@ function updateTimeDisplay() {
 function buildCodesOptions(projectId, selectedCodeId) {
   const proj = _allProjects.find(p => p.id == projectId);
   if (!proj || !proj.codes.length) return '<option value="">— no codes —</option>';
-  return proj.codes.map(c =>
-    `<option value="${c.id}" ${c.id == selectedCodeId ? 'selected' : ''}>${escHtml(c.code)} — ${escHtml(c.label)}</option>`
-  ).join('');
+  return proj.codes.map(c => {
+    const label = c.deprecated
+      ? `${escHtml(c.code)} — ${escHtml(c.label)} [deprecated]`
+      : `${escHtml(c.code)} — ${escHtml(c.label)}`;
+    return `<option value="${c.id}" ${c.id == selectedCodeId ? 'selected' : ''}>${label}</option>`;
+  }).join('');
 }
 
 function onProjectChange(projectId) {
@@ -273,11 +277,11 @@ async function saveEntry(e) {
   const res    = await apiFetch(url, { method, body: JSON.stringify(data) });
   if (res) {
     closeModal();
-    _allProjects = []; // reset cache
+    _allProjects = [];
     showToast(id ? 'Entry updated' : 'Entry added');
-    // Refresh whichever page is active
     if (typeof applyFiltersAndLoad === 'function') applyFiltersAndLoad();
-    if (typeof loadDashboardStats  === 'function') { loadDashboardStats(); loadWeekStats(); loadRecentEntries(); }
+    if (typeof loadDashboardStats  === 'function') { loadDashboardStats(); loadWeekStats(); loadWeekEntries(); }
+    loadTodayStats();
   }
 }
 
@@ -287,7 +291,8 @@ async function deleteEntry(id) {
   if (res) {
     showToast('Entry deleted');
     if (typeof applyFiltersAndLoad === 'function') applyFiltersAndLoad();
-    if (typeof loadDashboardStats  === 'function') { loadDashboardStats(); loadWeekStats(); loadRecentEntries(); }
+    if (typeof loadDashboardStats  === 'function') { loadDashboardStats(); loadWeekStats(); loadWeekEntries(); }
+    loadTodayStats();
   }
 }
 
@@ -334,7 +339,7 @@ function renderEntriesTable(entries, compact) {
           <span class="hours-chip">${e.hours.toFixed(2)}h</span>
           <span class="md-chip">${(e.hours/8).toFixed(2)}MD</span>
         </td>
-        <td>${escHtml(e.ticket || '')}</td>
+        <td>${renderTickets(e.ticket)}</td>
         <td class="td-desc" title="${escHtml(e.description || '')}">${escHtml(e.description || '')}</td>
         ${!compact ? `<td>${e.include_in_export && !absence
             ? '<span class="badge-yes">Yes</span>'
@@ -371,7 +376,88 @@ function selectAllInTable(masterCb) {
   if (typeof updateBulkBar === 'function') updateBulkBar();
 }
 
-/* ── Sidebar user ────────────────────────────────────────────────────── */
+/* ── Ticket helpers ──────────────────────────────────────────────────── */
+
+const _MN = ['January','February','March','April','May','June',
+             'July','August','September','October','November','December'];
+
+function renderTickets(ticketStr) {
+  if (!ticketStr || !ticketStr.trim()) return '<span style="color:#94a3b8">—</span>';
+  const tickets = ticketStr.split(',').map(t => t.trim()).filter(Boolean);
+  if (!tickets.length) return '<span style="color:#94a3b8">—</span>';
+  return tickets.map(t =>
+    `<button class="ticket-link" data-ticket="${escHtml(t)}" onclick="openTicketDetail(this,this.dataset.ticket)">${escHtml(t)}</button>`
+  ).join(' ');
+}
+
+async function openTicketDetail(btn, ticket) {
+  if (!ticket) return;
+  const tr = btn.closest('tr');
+
+  // Close any detail rows not belonging to this tr
+  document.querySelectorAll('.ticket-detail-row').forEach(r => {
+    if (r !== tr?.nextElementSibling) r.remove();
+  });
+  document.querySelectorAll('.ticket-link.ticket-active').forEach(b => {
+    if (b !== btn) b.classList.remove('ticket-active');
+  });
+
+  // Toggle off if already open for this row
+  if (tr?.nextElementSibling?.classList.contains('ticket-detail-row')) {
+    tr.nextElementSibling.remove();
+    btn.classList.remove('ticket-active');
+    return;
+  }
+
+  btn.classList.add('ticket-active');
+
+  const entries = await apiFetch(`/api/entries?ticket=${encodeURIComponent(ticket)}`);
+  if (!entries) { btn.classList.remove('ticket-active'); return; }
+
+  const totalH = entries.reduce((s, e) => s + e.hours, 0);
+  const byMonth = {};
+  entries.forEach(e => {
+    const ym = e.entry_date.slice(0, 7);
+    byMonth[ym] = (byMonth[ym] || 0) + e.hours;
+  });
+  const months = Object.keys(byMonth).sort().reverse();
+  const monthRows = months.map(ym => {
+    const [y, m] = ym.split('-');
+    const h = byMonth[ym];
+    return `<tr><td>${_MN[+m-1]} ${y}</td><td>${h.toFixed(2)} h</td><td>${(h/8).toFixed(2)} MD</td></tr>`;
+  }).join('');
+
+  const jiraLink = _jiraPrefix
+    ? `<a href="${escHtml(_jiraPrefix + ticket)}" target="_blank" rel="noopener" class="ticket-jira-link">↗ Jira</a>`
+    : '';
+
+  const colCount = tr ? tr.cells.length : 8;
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'ticket-detail-row';
+  const td = document.createElement('td');
+  td.colSpan = colCount;
+  td.innerHTML = `
+    <div class="ticket-inline-detail">
+      <div class="ticket-inline-header">
+        <span class="ticket-inline-name">${escHtml(ticket)}</span>
+        ${jiraLink}
+        <span class="ticket-inline-total">${totalH.toFixed(2)} h &nbsp;·&nbsp; ${(totalH/8).toFixed(2)} MD total</span>
+        <button class="ticket-inline-close" onclick="this.closest('.ticket-detail-row').previousElementSibling
+          .querySelectorAll('.ticket-link').forEach(b=>b.classList.remove('ticket-active'));
+          this.closest('.ticket-detail-row').remove()">✕</button>
+      </div>
+      <table class="ticket-month-table">
+        <thead><tr><th>Period</th><th>Hours</th><th>MD</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+      </table>
+    </div>`;
+  detailTr.appendChild(td);
+  if (tr) tr.after(detailTr);
+}
+
+/* ── Sidebar user & settings ─────────────────────────────────────────── */
+
+let _jiraPrefix = '';
 
 function updateSidebarUser(firstName, lastName) {
   const el = document.getElementById('sidebar-username');
@@ -380,7 +466,82 @@ function updateSidebarUser(firstName, lastName) {
 
 async function loadSidebarUser() {
   const s = await apiFetch('/api/settings');
-  if (s) updateSidebarUser(s.first_name, s.last_name);
+  if (s) {
+    updateSidebarUser(s.first_name, s.last_name);
+    _jiraPrefix = s.jira_prefix || '';
+  }
+  loadTodayStats();
+}
+
+/* ── Day panel (visible on all pages) ───────────────────────────────── */
+
+let dayOffset = 0;
+
+function _offsetToIso(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function shiftDay(delta) {
+  const newOffset = dayOffset + delta;
+  if (newOffset > 0) return;
+  dayOffset = newOffset;
+  loadTodayStats();
+}
+
+function jumpToToday() {
+  dayOffset = 0;
+  loadTodayStats();
+}
+
+async function loadTodayStats() {
+  const dowEl = document.getElementById('today-dow');
+  if (!dowEl) return;
+
+  const iso = _offsetToIso(dayOffset);
+  const ts  = await apiFetch(`/api/stats/today?date=${iso}`);
+  if (!ts) return;
+
+  const d    = new Date(ts.date + 'T00:00:00');
+  const dows = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const [y, m, day] = ts.date.split('-');
+  const isToday = dayOffset === 0;
+
+  dowEl.textContent = dows[d.getDay()] + (isToday ? ' — Today' : '');
+  const fullDateEl = document.getElementById('today-full-date');
+  if (fullDateEl) fullDateEl.textContent = `${day}.${m}.${y}`;
+  const subtitleEl = document.getElementById('dash-subtitle');
+  if (subtitleEl) subtitleEl.textContent = ts.date;
+
+  const nextBtn = document.getElementById('today-nav-next');
+  const jumpBtn = document.getElementById('today-jump-btn');
+  if (nextBtn) nextBtn.style.visibility = isToday ? 'hidden' : '';
+  if (jumpBtn) jumpBtn.style.display    = isToday ? 'none'   : '';
+
+  const h = ts.today_hours;
+  setText('panel-today-hours', `${h.toFixed(2)} h`);
+  setText('panel-today-md',    `${(h/8).toFixed(2)} MD`);
+
+  const bar = document.getElementById('panel-today-bar');
+  if (bar) bar.style.width = `${Math.min(h/8*100, 100).toFixed(1)}%`;
+
+  const remEl  = document.getElementById('panel-today-remaining');
+  const remSub = document.getElementById('panel-today-remaining-sub');
+
+  if (!ts.is_workday) {
+    if (remEl) { remEl.textContent = '—'; remEl.className = 'today-rem-val today-rem-ok'; }
+    if (remSub) remSub.textContent = 'Weekend / holiday';
+    if (bar) { bar.style.width = '0%'; bar.className = 'today-bar-fill'; }
+  } else {
+    const rem = ts.remaining;
+    if (remEl) {
+      remEl.textContent = `${rem.toFixed(2)} h`;
+      remEl.className = 'today-rem-val ' + (rem < 0 ? 'today-rem-over' : rem === 0 ? 'today-rem-ok' : '');
+    }
+    if (remSub) remSub.textContent = `${(rem/8).toFixed(2)} MD`;
+    if (bar) bar.className = 'today-bar-fill' + (rem < 0 ? ' today-bar-over' : rem === 0 ? ' today-bar-done' : '');
+  }
 }
 
 /* ── Boot ────────────────────────────────────────────────────────────── */

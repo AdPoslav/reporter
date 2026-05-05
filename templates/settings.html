@@ -32,6 +32,12 @@
         <span class="form-hint">This is the employee identifier required by the external company's SAP system.</span>
       </div>
 
+      <div class="form-group">
+        <label>Jira Base URL <span class="label-hint">(optional — enables ticket links)</span></label>
+        <input type="text" name="jira_prefix" value="{{ jira_prefix }}" placeholder="e.g. https://jira.company.com/browse/"/>
+        <span class="form-hint">Ticket links open as: {base url}{ticket} — e.g. …/browse/PROJ-123</span>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Save Settings</button>
       </div>
@@ -61,8 +67,7 @@
         <tr><td>D</td><td>/PPA/LSTNR</td><td>81001 (static)</td></tr>
         <tr><td>E</td><td>/PPA/MENGE</td><td>Hours as decimal (e.g. 0.50 = 30 min)</td></tr>
         <tr><td>G</td><td>RPROJ</td><td>Billing code (e.g. K.003518.001.002)</td></tr>
-        <tr><td>W</td><td>LTXA1</td><td>[TICKET] Description or just Description</td></tr>
-        <tr><td>Z</td><td>/PPA/MAFAZ1</td><td>X (always, for external billing)</td></tr>
+        <tr><td>W</td><td>LTXA1</td><td>[TICKET] - Description  or  [T1, T2] - Description  or just Description</td></tr>
       </tbody>
     </table>
   </div>
@@ -75,9 +80,10 @@ async function saveSettings(e) {
   e.preventDefault();
   const form = e.target;
   const data = {
-    first_name: form.first_name.value.trim(),
-    last_name:  form.last_name.value.trim(),
-    work_id:    form.work_id.value.trim(),
+    first_name:  form.first_name.value.trim(),
+    last_name:   form.last_name.value.trim(),
+    work_id:     form.work_id.value.trim(),
+    jira_prefix: form.jira_prefix.value.trim(),
   };
   const res = await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) });
   if (res && res.success) {

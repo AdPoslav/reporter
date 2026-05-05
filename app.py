@@ -130,6 +130,7 @@ def settings_page():
         work_id=db.get_setting('work_id'),
         first_name=db.get_setting('first_name'),
         last_name=db.get_setting('last_name'),
+        jira_prefix=db.get_setting('jira_prefix') or '',
     )
 
 
@@ -138,18 +139,20 @@ def settings_page():
 @app.route('/api/settings', methods=['GET'])
 def api_get_settings():
     return jsonify({
-        'work_id':    db.get_setting('work_id'),
-        'first_name': db.get_setting('first_name'),
-        'last_name':  db.get_setting('last_name'),
+        'work_id':     db.get_setting('work_id'),
+        'first_name':  db.get_setting('first_name'),
+        'last_name':   db.get_setting('last_name'),
+        'jira_prefix': db.get_setting('jira_prefix') or '',
     })
 
 
 @app.route('/api/settings', methods=['POST'])
 def api_save_settings():
     data = request.get_json()
-    db.set_setting('work_id',    data.get('work_id', ''))
-    db.set_setting('first_name', data.get('first_name', ''))
-    db.set_setting('last_name',  data.get('last_name', ''))
+    db.set_setting('work_id',     data.get('work_id', ''))
+    db.set_setting('first_name',  data.get('first_name', ''))
+    db.set_setting('last_name',   data.get('last_name', ''))
+    db.set_setting('jira_prefix', data.get('jira_prefix', ''))
     return jsonify({'success': True})
 
 
@@ -180,17 +183,34 @@ def api_delete_project(pid):
     return jsonify({'success': True})
 
 
+@app.route('/api/projects/<int:pid>/archive', methods=['POST'])
+def api_archive_project(pid):
+    db.archive_project(pid)
+    return jsonify({'success': True})
+
+@app.route('/api/projects/<int:pid>/restore', methods=['POST'])
+def api_restore_project(pid):
+    db.restore_project(pid)
+    return jsonify({'success': True})
+
+
 @app.route('/api/projects/<int:pid>/codes', methods=['POST'])
 def api_create_code(pid):
     data = request.get_json()
-    cid = db.create_project_code(pid, data['code'].strip(), data['label'].strip())
+    cid = db.create_project_code(
+        pid, data['code'].strip(), data['label'].strip(),
+        deprecated=bool(data.get('deprecated', False))
+    )
     return jsonify({'id': cid, 'success': True})
 
 
 @app.route('/api/projects/<int:pid>/codes/<int:cid>', methods=['PUT'])
 def api_update_code(pid, cid):
     data = request.get_json()
-    db.update_project_code(cid, data['code'].strip(), data['label'].strip())
+    db.update_project_code(
+        cid, data['code'].strip(), data['label'].strip(),
+        deprecated=bool(data.get('deprecated', False))
+    )
     return jsonify({'success': True})
 
 
@@ -205,12 +225,13 @@ def api_delete_code(pid, cid):
 @app.route('/api/entries', methods=['GET'])
 def api_entries():
     filters = {k: v for k, v in {
-        'date_from':   request.args.get('date_from'),
-        'date_to':     request.args.get('date_to'),
-        'project_id':  request.args.get('project_id'),
-        'code_id':     request.args.get('code_id'),
-        'ticket':      request.args.get('ticket'),
-        'description': request.args.get('description'),
+        'date_from':    request.args.get('date_from'),
+        'date_to':      request.args.get('date_to'),
+        'project_id':   request.args.get('project_id'),
+        'code_id':      request.args.get('code_id'),
+        'ticket':       request.args.get('ticket'),
+        'ticket_exact': request.args.get('ticket_exact'),
+        'description':  request.args.get('description'),
     }.items() if v}
     return jsonify(db.get_entries(filters))
 
@@ -288,6 +309,12 @@ def api_week_stats():
     year  = int(request.args.get('year',  iso[0]))
     week  = int(request.args.get('week',  iso[1]))
     return jsonify(db.get_week_stats(year, week))
+
+
+@app.route('/api/stats/today')
+def api_today_stats():
+    date_str = request.args.get('date')
+    return jsonify(db.get_day_stats(date_str))
 
 
 # ── Export API ────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@
     <div class="filter-group">
       <label>View</label>
       <div class="btn-group">
+        <button class="btn btn-sm btn-outline" id="view-year"  onclick="setView('year')">Year</button>
         <button class="btn btn-sm btn-outline active" id="view-month" onclick="setView('month')">Month</button>
         <button class="btn btn-sm btn-outline" id="view-week"  onclick="setView('week')">Week</button>
         <button class="btn btn-sm btn-outline" id="view-day"   onclick="setView('day')">Day</button>
@@ -101,7 +102,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
 
 function setView(v) {
   currentView = v;
-  ['month','week','day'].forEach(x => {
+  ['year','month','week','day'].forEach(x => {
     document.getElementById(`view-${x}`).classList.toggle('active', x===v);
   });
   updatePeriodLabel();
@@ -110,14 +111,17 @@ function setView(v) {
 
 function updatePeriodLabel() {
   let label = '';
-  if (currentView === 'month') label = `${MONTH_NAMES[viewMonth-1]} ${viewYear}`;
-  else if (currentView === 'week') label = `Week ${viewWeek}, ${viewYear}`;
-  else label = viewDay;
+  if      (currentView === 'year')  label = `${viewYear}`;
+  else if (currentView === 'month') label = `${MONTH_NAMES[viewMonth-1]} ${viewYear}`;
+  else if (currentView === 'week')  label = `Week ${viewWeek}, ${viewYear}`;
+  else                              label = fmtDate(viewDay);
   document.getElementById('entries-period-label').textContent = label;
 }
 
 function shiftPeriod(delta) {
-  if (currentView === 'month') {
+  if (currentView === 'year') {
+    viewYear += delta;
+  } else if (currentView === 'month') {
     viewMonth += delta;
     if (viewMonth > 12) { viewMonth = 1; viewYear++; }
     if (viewMonth < 1)  { viewMonth = 12; viewYear--; }
@@ -134,17 +138,28 @@ function shiftPeriod(delta) {
   applyFiltersAndLoad();
 }
 
+// Returns ISO date string (YYYY-MM-DD) for the Monday of the given ISO week
+function isoWeekMonday(year, week) {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dow  = jan4.getUTCDay() || 7;          // 1=Mon … 7=Sun
+  const mon1 = new Date(jan4);
+  mon1.setUTCDate(jan4.getUTCDate() - dow + 1); // Monday of week 1
+  mon1.setUTCDate(mon1.getUTCDate() + (week - 1) * 7);
+  return mon1.toISOString().slice(0, 10);
+}
+
 function getDateRange() {
-  if (currentView === 'month') {
+  if (currentView === 'year') {
+    return { from: `${viewYear}-01-01`, to: `${viewYear}-12-31` };
+  } else if (currentView === 'month') {
     const last = new Date(viewYear, viewMonth, 0).getDate();
     return { from: `${viewYear}-${String(viewMonth).padStart(2,'0')}-01`,
              to:   `${viewYear}-${String(viewMonth).padStart(2,'0')}-${String(last).padStart(2,'0')}` };
   } else if (currentView === 'week') {
-    const jan4 = new Date(viewYear, 0, 4);
-    const weekStart = new Date(jan4);
-    weekStart.setDate(jan4.getDate() - jan4.getDay() + 1 + (viewWeek-1)*7);
-    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
-    return { from: weekStart.toISOString().slice(0,10), to: weekEnd.toISOString().slice(0,10) };
+    const from = isoWeekMonday(viewYear, viewWeek);
+    const sun  = new Date(from + 'T00:00:00Z');
+    sun.setUTCDate(sun.getUTCDate() + 6);
+    return { from, to: sun.toISOString().slice(0, 10) };
   } else {
     return { from: viewDay, to: viewDay };
   }
@@ -199,13 +214,17 @@ async function applyFiltersAndLoad() {
   const entries = await apiFetch(`/api/entries?${params}`);
   renderEntriesPage(entries || []);
 
-  // Load stats for the period
-  if (currentView === 'month') {
+  // Stats for the period
+  if (currentView === 'year') {
+    renderYearStats(entries || []);
+  } else if (currentView === 'month') {
     const ms = await apiFetch(`/api/stats/month?year=${viewYear}&month=${viewMonth}`);
     if (ms) renderViewStats(ms);
   } else if (currentView === 'week') {
     const ws = await apiFetch(`/api/stats/week?year=${viewYear}&week=${viewWeek}`);
     if (ws) renderViewStats(ws);
+  } else {
+    document.getElementById('view-stats').innerHTML = '';
   }
 }
 
@@ -232,6 +251,33 @@ function renderViewStats(s) {
     <div class="view-stat">
       <span class="vs-label">Remaining</span>
       <span class="vs-val ${remClass}">${s.remaining.toFixed(2)}h <span class="vs-sub">/ ${(s.remaining/8).toFixed(2)} MD</span></span>
+    </div>
+  `;
+}
+
+function renderYearStats(entries) {
+  const el = document.getElementById('view-stats');
+  if (!entries.length) { el.innerHTML = ''; return; }
+  const expH  = entries.filter(e => !e.is_absence && e.include_in_export).reduce((s,e) => s+e.hours, 0);
+  const noExpH = entries.filter(e => !e.is_absence && !e.include_in_export).reduce((s,e) => s+e.hours, 0);
+  const absH  = entries.filter(e => e.is_absence).reduce((s,e) => s+e.hours, 0);
+  const totalH = expH + noExpH;
+  el.innerHTML = `
+    <div class="view-stat">
+      <span class="vs-label">Logged (export)</span>
+      <span class="vs-val">${expH.toFixed(2)}h <span class="vs-sub">/ ${(expH/8).toFixed(2)} MD</span></span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Logged (no export)</span>
+      <span class="vs-val">${noExpH.toFixed(2)}h <span class="vs-sub">/ ${(noExpH/8).toFixed(2)} MD</span></span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Absence</span>
+      <span class="vs-val">${absH.toFixed(2)}h</span>
+    </div>
+    <div class="view-stat">
+      <span class="vs-label">Total logged</span>
+      <span class="vs-val">${totalH.toFixed(2)}h <span class="vs-sub">/ ${(totalH/8).toFixed(2)} MD</span></span>
     </div>
   `;
 }
@@ -302,7 +348,7 @@ function renderEntriesPage(entries) {
             <span class="hours-chip">${e.hours.toFixed(2)}h</span>
             <span class="md-chip">${(e.hours/8).toFixed(2)}MD</span>
           </td>
-          <td>${escHtml(e.ticket || '')}</td>
+          <td>${renderTickets(e.ticket)}</td>
           <td class="td-desc" title="${escHtml(e.description || '')}">${escHtml(e.description || '')}</td>
           <td>${e.include_in_export && !absence
             ? '<span class="badge-yes">Yes</span>'

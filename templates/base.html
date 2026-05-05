@@ -75,6 +75,7 @@
         </svg>
         <span id="sidebar-username">—</span>
       </div>
+      <div class="sidebar-copyright">© Adam Poperník</div>
     </div>
   </aside>
 
@@ -84,6 +85,48 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+
+  <!-- Right aside — today panel, always visible -->
+  <div class="dashboard-aside">
+    <div class="today-nav">
+      <button class="today-nav-btn" onclick="shiftDay(-1)" title="Previous day">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="today-nav-center">
+        <span class="today-dow" id="today-dow">—</span>
+        <span class="today-full-date" id="today-full-date">—</span>
+        <button class="today-jump-today" id="today-jump-btn" onclick="jumpToToday()" style="display:none">↩ Today</button>
+      </div>
+      <button class="today-nav-btn" id="today-nav-next" onclick="shiftDay(1)" title="Next day">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+
+    <div class="today-section">
+      <div class="today-section-label">Logged</div>
+      <div class="today-hours-big" id="panel-today-hours">—</div>
+      <div class="today-md" id="panel-today-md">—</div>
+    </div>
+
+    <div class="today-bar-wrap">
+      <div class="today-bar-fill" id="panel-today-bar" style="width:0%"></div>
+    </div>
+    <div class="today-bar-legend"><span>0h</span><span>8h</span></div>
+
+    <div class="today-remaining-row">
+      <span class="today-rem-label">Remaining</span>
+      <span class="today-rem-val" id="panel-today-remaining">—</span>
+    </div>
+    <div class="today-rem-sub" id="panel-today-remaining-sub">—</div>
+
+    <button class="btn btn-primary btn-block" style="margin-top:28px"
+            onclick="openAddEntry(dayOffset !== 0 ? _offsetToIso(dayOffset) : null)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Log Time
+    </button>
+  </div>
 </div>
 
 <!-- Toast -->
