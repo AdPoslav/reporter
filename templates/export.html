@@ -14,44 +14,46 @@
   <div class="card export-config-card">
     <h2 class="card-title">Export Settings</h2>
 
-    <div class="form-group">
-      <label>Month</label>
-      <div class="month-picker">
-        <select id="exp-month">
-          {% for i in range(1,13) %}
-          <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>
-            {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][i-1] }}
-          </option>
+    <div class="export-controls">
+      <div class="form-group">
+        <label>Month</label>
+        <div class="month-picker">
+          <select id="exp-month">
+            {% for i in range(1,13) %}
+            <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>
+              {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][i-1] }}
+            </option>
+            {% endfor %}
+          </select>
+          <input type="number" id="exp-year" value="{{ current_year }}" min="2020" max="2099" style="width:90px"/>
+        </div>
+      </div>
+
+      <div class="form-group" style="flex:1; min-width:200px;">
+        <label>Project <span class="label-hint">(leave empty = all)</span></label>
+        <select id="exp-project">
+          <option value="">All projects</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
           {% endfor %}
         </select>
-        <input type="number" id="exp-year" value="{{ current_year }}" min="2020" max="2099" style="width:90px"/>
       </div>
-    </div>
 
-    <div class="form-group">
-      <label>Project (optional — leave empty to export all)</label>
-      <select id="exp-project">
-        <option value="">All projects</option>
-        {% for p in projects %}
-        <option value="{{ p.id }}">{{ p.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
+      <div class="form-group flex-shrink" style="justify-content:flex-end;">
+        <label style="white-space:nowrap;">
+          <input type="checkbox" id="exp-use-selection" onchange="toggleSelectionMode()"/>
+          Only selected rows
+        </label>
+      </div>
 
-    <div class="form-group">
-      <label>
-        <input type="checkbox" id="exp-use-selection" onchange="toggleSelectionMode()"/>
-        Export only selected rows (from the preview below)
-      </label>
+      <button class="btn btn-primary btn-generate" onclick="runExport()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Generate Export
+      </button>
     </div>
-
-    <button class="btn btn-primary btn-block" onclick="runExport()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      Generate Export
-    </button>
 
     <div id="export-result" class="export-result hidden"></div>
   </div>

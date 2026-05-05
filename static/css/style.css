@@ -538,9 +538,20 @@ textarea { resize: vertical; min-height: 72px; }
 .codes-table .td-actions { display: flex; gap: 4px; justify-content: flex-end; }
 
 /* ── Export page ─────────────────────────────────────────────────────── */
-.export-layout         { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; }
-.export-config-card    {}
-.export-preview-card   {}
+.export-layout       { display: flex; flex-direction: column; gap: 20px; }
+.export-config-card  {}
+.export-preview-card {}
+
+/* Settings bar — horizontal fields in one row */
+.export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+.export-controls .form-group { margin-bottom: 0; min-width: 160px; }
+.export-controls .form-group.flex-shrink { min-width: 0; }
+.export-controls .btn-generate { align-self: flex-end; white-space: nowrap; flex-shrink: 0; }
 
 .month-picker { display: flex; gap: 8px; }
 .month-picker select { flex: 1; }
@@ -556,8 +567,8 @@ textarea { resize: vertical; min-height: 72px; }
 .export-result-error   { background: #FEE2E2; border: 1px solid #FCA5A5; color: #991B1B; }
 
 .export-file-list { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.export-file-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: rgba(255,255,255,.6); padding: 8px 12px; border-radius: 6px; }
-.export-file-list span { font-family: monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.export-file-list li { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,.6); padding: 8px 12px; border-radius: 6px; }
+.export-file-list span { font-family: monospace; font-size: 12px; flex: 1; word-break: break-all; }
 
 .export-project-group  { margin-bottom: 20px; }
 .export-group-header   { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #F8FAFC; border: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; font-size: 13px; }
