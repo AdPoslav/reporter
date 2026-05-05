@@ -45,6 +45,20 @@
       </div>
     </div>
 
+    <!-- Missing days calendar -->
+    <div class="missing-days-card" id="missing-days-card">
+      <div class="missing-days-header">
+        <span class="missing-days-title">Month overview</span>
+        <span class="missing-days-badge" id="missing-badge"></span>
+      </div>
+      <div class="missing-cal-grid" id="missing-cal-grid">
+        <div class="missing-cal-dow">M</div><div class="missing-cal-dow">T</div>
+        <div class="missing-cal-dow">W</div><div class="missing-cal-dow">T</div>
+        <div class="missing-cal-dow">F</div><div class="missing-cal-dow">S</div>
+        <div class="missing-cal-dow">S</div>
+      </div>
+    </div>
+
     <!-- Projects breakdown -->
     <div class="section-header">
       <h2>Projects this month</h2>
@@ -127,6 +141,7 @@ function shiftMonth(delta) {
 }
 
 async function loadDashboardStats() {
+  loadMissingDays();
   document.getElementById('period-label').textContent =
     `${MONTH_NAMES[dashMonth-1]} ${dashYear}`;
   const ms = await apiFetch(`/api/stats/month?year=${dashYear}&month=${dashMonth}`);
@@ -190,10 +205,58 @@ async function loadWeekEntries() {
   container.innerHTML = renderEntriesTable(entries, true);
 }
 
+async function loadMissingDays() {
+  const data = await apiFetch(`/api/stats/missing-days?year=${dashYear}&month=${dashMonth}`);
+  if (!data) return;
+
+  const badge = document.getElementById('missing-badge');
+  if (data.missing_count === 0) {
+    badge.textContent = '✓ all days filled';
+    badge.className = 'missing-days-badge badge-ok';
+  } else {
+    badge.textContent = `${data.missing_count} day${data.missing_count > 1 ? 's' : ''} missing`;
+    badge.className = 'missing-days-badge badge-warn';
+  }
+
+  const grid = document.getElementById('missing-cal-grid');
+  // keep day-of-week headers (first 7 children), remove old day cells
+  const headers = Array.from(grid.children).slice(0, 7);
+  grid.innerHTML = '';
+  headers.forEach(h => grid.appendChild(h));
+
+  // blank cells before first day (weekday of day 1: Mon=0)
+  const firstWeekday = data.days[0].weekday;
+  for (let i = 0; i < firstWeekday; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'missing-cal-day day-blank';
+    grid.appendChild(blank);
+  }
+
+  data.days.forEach(d => {
+    const cell = document.createElement('div');
+    let cls = 'missing-cal-day ';
+    if (d.is_weekend || d.is_holiday) cls += 'day-off';
+    else if (d.is_future)             cls += 'day-future';
+    else if (d.missing)               cls += 'day-missing';
+    else                              cls += 'day-ok';
+    cell.className = cls;
+    cell.textContent = d.day;
+    let tip = d.date;
+    if (d.is_holiday)      tip += ' · holiday';
+    else if (d.is_weekend) tip += ' · weekend';
+    else if (d.is_future)  tip += ' · future';
+    else if (d.missing)    tip += ' · no entries!';
+    else                   tip += ` · ${d.hours}h logged`;
+    cell.title = tip;
+    grid.appendChild(cell);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadDashboardStats();
   loadWeekStats();
   loadWeekEntries();
+  loadMissingDays();
 });
 </script>
 {% endblock %}

@@ -404,6 +404,68 @@ def api_download(filename):
 
 # ── Data export / import ──────────────────────────────────────────────────────
 
+@app.route('/api/stats/missing-days')
+def api_missing_days():
+    year  = int(request.args.get('year',  _today().year))
+    month = int(request.args.get('month', _today().month))
+    today = _today()
+
+    num_days = __import__('calendar').monthrange(year, month)[1]
+
+    conn = db.get_db()
+    holidays = conn.execute('SELECT day, month, year, is_recurring FROM holidays').fetchall()
+    # hours logged per day (non-absence only)
+    rows = conn.execute('''
+        SELECT entry_date, COALESCE(SUM(hours),0) AS h
+        FROM time_entries
+        WHERE entry_date LIKE ? AND is_absence = 0
+        GROUP BY entry_date
+    ''', (f'{year:04d}-{month:02d}%',)).fetchall()
+    conn.close()
+
+    logged = {r['entry_date']: round(r['h'], 2) for r in rows}
+
+    def is_holiday(d):
+        return any(
+            h['month'] == d.month and h['day'] == d.day and
+            (h['is_recurring'] or h['year'] == d.year)
+            for h in holidays
+        )
+
+    days = []
+    missing_dates = []
+    for day_num in range(1, num_days + 1):
+        d      = datetime.date(year, month, day_num)
+        ds     = d.strftime('%Y-%m-%d')
+        is_we  = d.weekday() >= 5
+        is_hol = is_holiday(d)
+        is_fut = d > today
+        hours  = logged.get(ds, 0.0)
+        is_work = not is_we and not is_hol
+        missing = is_work and not is_fut and hours == 0.0
+
+        days.append({
+            'date':       ds,
+            'day':        day_num,
+            'weekday':    d.weekday(),  # 0=Mon
+            'is_working': is_work,
+            'is_future':  is_fut,
+            'is_holiday': is_hol,
+            'is_weekend': is_we,
+            'hours':      hours,
+            'missing':    missing,
+        })
+        if missing:
+            missing_dates.append(ds)
+
+    return jsonify({
+        'year': year, 'month': month,
+        'days': days,
+        'missing_count': len(missing_dates),
+        'missing_dates': missing_dates,
+    })
+
+
 @app.route('/api/data/export', methods=['GET'])
 def api_data_export():
     conn = db.get_db()
