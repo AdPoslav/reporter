@@ -1,11 +1,13 @@
 import os
 import io
+import struct
 from datetime import datetime, date as date_type
 
 import msoffcrypto
 import xlrd
-from xlutils.copy import copy as xl_copy
 import xlwt
+from xlwt import BIFFRecords as B  # noqa: F401  (kept for callers/extension)
+from xlutils.copy import copy as xl_copy
 
 TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -13,14 +15,18 @@ TEMPLATE_PATH = os.path.join(
 )
 EXPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exports')
 
+# Columns kept visible in the export; everything else is hidden.
 _USED_COLS  = {0, 1, 3, 4, 6, 22}
-_TOTAL_COLS = 42
+_TOTAL_COLS = 41          # template spans A:AO (41 columns)
 
-# Custom palette slots (safe range, won't clash with standard black=8 / white=9)
-_PEACH_IDX    = 55   # #FFCC99  — columns A, D
-_LAVENDER_IDX = 56   # #CCCCFF  — column  G
-_HEADER_IDX   = 57   # #C65911  — header background
-_WHITE_IDX    = 9    # standard Excel white — header text (do NOT override)
+# Columns that need their template-defined data style reused. The actual XF
+# index inside the xlwt workbook is discovered at runtime — xlutils remaps the
+# template's XFs into a new index space when copying.
+_DATA_STYLE_COLS = (0, 1, 3, 4, 6, 22)
+
+# AutoFilter range: rows 0..nrows (header + data), cols 0..40 (A..AO)
+_AF_FIRST_COL = 0
+_AF_LAST_COL  = _TOTAL_COLS - 1
 
 
 def _open_template():
@@ -43,30 +49,78 @@ def _format_ltxa1(ticket, description):
     return description
 
 
-def _make_style(fore_colour_idx=None, num_format_str=None):
-    """Thin border on all sides + optional fill colour + optional number format."""
-    style = xlwt.XFStyle()
-
-    b = xlwt.Borders()
-    b.left = b.right = b.top = b.bottom = xlwt.Borders.THIN
-    style.borders = b
-
-    if fore_colour_idx is not None:
-        p = xlwt.Pattern()
-        p.pattern = xlwt.Pattern.SOLID_PATTERN
-        p.pattern_fore_colour = fore_colour_idx
-        style.pattern = p
-
-    if num_format_str:
-        style.num_format_str = num_format_str
-
-    return style
-
-
 def _excel_date_serial(iso_date_str):
-    """Convert YYYY-MM-DD to Excel date serial (compatible with DD-MM-YYYY cell format)."""
     d = datetime.strptime(iso_date_str, '%Y-%m-%d').date()
     return (d - date_type(1899, 12, 30)).days
+
+
+def _write_cell(ws, row, col, value, xf_index):
+    """Write a cell and force it to use one of the template's existing XF indexes,
+    so the template's colour/format/border survives untouched."""
+    ws.write(row, col, value)
+    cell = ws._Worksheet__rows[row]._Row__cells[col]
+    cell.xf_idx = xf_index
+
+
+def _install_autofilter(wb, sheet_idx, last_row):
+    """Inject SUPBOOK + EXTERNSHEET + NAME(_FilterDatabase) at workbook level,
+    plus an AutoFilterInfo record on the sheet, so Excel shows the clickable
+    filter dropdowns over A1:AO{last_row+1}.
+
+    xlwt has no public API for AutoFilter, so we patch the two record builders
+    that compose the BIFF stream.
+    """
+    sheet = wb.get_sheet(sheet_idx)
+
+    # ── _FilterDatabase NAME + supporting link records ─────────────────────
+    # RPN: tArea3d (0x3B) + ixti(2) + rwFirst(2) + rwLast(2) + colFirst(2) + colLast(2)
+    rpn = struct.pack('<BHHHHH',
+                      0x3B, 0,
+                      0, last_row,
+                      _AF_FIRST_COL, _AF_LAST_COL)
+
+    # NAME record for builtin _FilterDatabase (0x0D). Built manually because
+    # xlwt.BIFFRecords.NameRecord is Py2-only (passes str to struct '%ds').
+    # Layout: H(opts) B(kb) B(uname_len) H(sz_rpn) H(reserved) H(sheet_1based)
+    #         B(lm) B(ld) B(lh) B(ls) B(uflag) B(name_byte) + rpn
+    name_payload = struct.pack(
+        '<HBBHHHBBBBBB',
+        0x0021,          # fBuiltin | fHidden
+        0x00,            # keyboard shortcut
+        0x01,            # uname_len
+        len(rpn),
+        0x0000,          # reserved
+        sheet_idx + 1,   # 1-based local sheet index
+        0, 0, 0, 0,      # lm, ld, lh, ls
+        0x00,            # unicode flag (compressed)
+        0x0D,            # builtin code: _FilterDatabase
+    ) + rpn
+    name_rec = struct.pack('<HH', 0x0018, len(name_payload)) + name_payload
+
+    n_sheets = len(wb._Workbook__worksheets)
+    supbook_rec     = B.InternalReferenceSupBookRecord(n_sheets).get()
+    externsheet_rec = B.ExternSheetRecord([(0, sheet_idx, sheet_idx)]).get()
+
+    def _patched_all_links(self):
+        return supbook_rec + externsheet_rec + name_rec
+
+    wb._Workbook__all_links_rec = _patched_all_links.__get__(wb, type(wb))
+
+    # ── AutoFilterInfo record on the sheet ─────────────────────────────────
+    # 0x009D, length 2, payload = number of dropdown columns.
+    n_filter_cols = _AF_LAST_COL - _AF_FIRST_COL + 1
+    auto_filter_info = struct.pack('<HHH', 0x009D, 2, n_filter_cols)
+
+    orig_get_biff_data = sheet.get_biff_data
+    eof_marker = struct.pack('<HH', 0x000A, 0)
+
+    def _patched_sheet_biff():
+        data = orig_get_biff_data()
+        if data.endswith(eof_marker):
+            return data[:-len(eof_marker)] + auto_filter_info + eof_marker
+        return data + auto_filter_info
+
+    sheet.get_biff_data = _patched_sheet_biff
 
 
 def generate_export(entries, project_name, project_code, work_id,
@@ -85,58 +139,13 @@ def generate_export(entries, project_name, project_code, work_id,
     wb = xl_copy(rb)
     ws = wb.get_sheet(0)
 
-    # ── Palette ────────────────────────────────────────────────────────────
-    wb.set_colour_RGB(_PEACH_IDX,    0xFF, 0xCC, 0x99)
-    wb.set_colour_RGB(_LAVENDER_IDX, 0xCC, 0xCC, 0xFF)
-    wb.set_colour_RGB(_HEADER_IDX,   0xC6, 0x59, 0x11)
+    # Snapshot the xf_idx that xlutils assigned to each used column on the
+    # template's first data row. Reusing these on every output row keeps the
+    # template's exact colours, fonts, borders and number formats intact.
+    template_row1 = ws._Worksheet__rows[1]
+    data_xf = {c: template_row1._Row__cells[c].xf_idx for c in _DATA_STYLE_COLS}
 
-    # ── Header row ─────────────────────────────────────────────────────────
-    # Build a header style and discover its registered xf_index via a temp cell
-    hdr_font = xlwt.Font()
-    hdr_font.colour_index = _WHITE_IDX
-    hdr_font.bold = True
-    hdr_align = xlwt.Alignment()
-    hdr_align.wrap = xlwt.Alignment.WRAP_AT_RIGHT
-    hdr_align.vert = xlwt.Alignment.VERT_CENTER
-
-    hdr_style = xlwt.XFStyle()
-    hdr_style.font = hdr_font
-    hdr_style.alignment = hdr_align
-    hp = xlwt.Pattern()
-    hp.pattern = xlwt.Pattern.SOLID_PATTERN
-    hp.pattern_fore_colour = _HEADER_IDX
-    hdr_style.pattern = hp
-
-    # Write to a scratch cell to register the style and read back the xf_index
-    _SCRATCH = 60000
-    ws.write(_SCRATCH, 0, '', hdr_style)
-    scratch_row = ws._Worksheet__rows.get(_SCRATCH)
-    hdr_xf = 0
-    if scratch_row:
-        scratch_cell = scratch_row._Row__cells.get(0)
-        if scratch_cell and hasattr(scratch_cell, 'xf_index'):
-            hdr_xf = scratch_cell.xf_index
-    del ws._Worksheet__rows[_SCRATCH]
-
-    # Set row 0 height (82 points = 82 × 20 twips) and apply header style to all cells
-    ws.row(0).height = 82 * 20
-    ws.row(0).height_mismatch = True
-    row0 = ws._Worksheet__rows.get(0)
-    if row0 and hdr_xf:
-        for cell in row0._Row__cells.values():
-            cell.xf_index = hdr_xf
-
-    # ── Data styles (col → XFStyle) ────────────────────────────────────────
-    col_style = {
-        0:  _make_style(_PEACH_IDX,    '0'),           # A  Work-ID     Number
-        1:  _make_style(None,          'DD-MM-YYYY'),  # B  WORKDATE    Date
-        3:  _make_style(_PEACH_IDX,    '0'),           # D  /PPA/LSTNR  Number
-        4:  _make_style(None,          '0.00'),        # E  /PPA/MENGE  Number
-        6:  _make_style(_LAVENDER_IDX, '@'),           # G  RPROJ       General
-        22: _make_style(None,          '@'),           # W  LTXA1       General
-    }
-
-    # ── Hide unused columns ────────────────────────────────────────────────
+    # ── Hide unused columns (header colours of active cols stay intact) ───
     for col_idx in range(_TOTAL_COLS):
         if col_idx not in _USED_COLS:
             ws.col(col_idx).hidden = True
@@ -146,29 +155,32 @@ def generate_export(entries, project_name, project_code, work_id,
     ws.set_remove_splits(True)
 
     # ── Data rows ──────────────────────────────────────────────────────────
+    try:
+        work_id_val = int(work_id)
+    except (ValueError, TypeError):
+        work_id_val = str(work_id)
+
     for row_idx, entry in enumerate(exportable, start=1):
         date_serial = _excel_date_serial(entry['entry_date'])
         hours_val   = round(float(entry['hours']), 2)
         ltxa1       = _format_ltxa1(entry.get('ticket', ''), entry.get('description', ''))
         code        = entry.get('entry_code') or entry.get('project_main_code', '')
 
-        try:
-            work_id_val = int(work_id)
-        except (ValueError, TypeError):
-            work_id_val = str(work_id)
+        _write_cell(ws, row_idx,  0, work_id_val, data_xf[0])
+        _write_cell(ws, row_idx,  1, date_serial, data_xf[1])
+        _write_cell(ws, row_idx,  3, 81001,       data_xf[3])
+        _write_cell(ws, row_idx,  4, hours_val,   data_xf[4])
+        _write_cell(ws, row_idx,  6, str(code),   data_xf[6])
+        _write_cell(ws, row_idx, 22, ltxa1,       data_xf[22])
 
-        ws.write(row_idx,  0, work_id_val,  col_style[0])
-        ws.write(row_idx,  1, date_serial,  col_style[1])
-        ws.write(row_idx,  3, 81001,        col_style[3])
-        ws.write(row_idx,  4, hours_val,    col_style[4])
-        ws.write(row_idx,  6, str(code),    col_style[6])
-        ws.write(row_idx, 22, ltxa1,        col_style[22])
-
-    # ── Remove template rows below our data ────────────────────────────────
+    # ── Drop the template's leftover blank rows below our data ─────────────
     n = len(exportable)
     rows_dict = ws._Worksheet__rows
     for k in [k for k in rows_dict if k > n]:
         del rows_dict[k]
+
+    # ── Re-attach the AutoFilter on the new data range ─────────────────────
+    _install_autofilter(wb, 0, last_row=n)
 
     full_name = f"{first_name} {last_name}".strip()
     filename  = f"{full_name}_{project_code}_{month:02d}_{year}.xls"
