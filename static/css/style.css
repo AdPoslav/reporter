@@ -573,6 +573,14 @@ textarea { resize: vertical; min-height: 72px; }
 .export-project-group  { margin-bottom: 20px; }
 .export-group-header   { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #F8FAFC; border: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; font-size: 13px; }
 
+/* ── Data management card ────────────────────────────────────────────── */
+.data-mgmt-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 4px; }
+.data-mgmt-box    { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.data-mgmt-title  { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 7px; margin: 0 0 8px; }
+.data-mgmt-desc   { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.55; }
+.data-mgmt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) { .data-mgmt-grid { grid-template-columns: 1fr; } }
+
 /* ── Settings page ───────────────────────────────────────────────────── */
 .settings-layout { display: flex; flex-direction: column; gap: 20px; max-width: 700px; }
 .settings-card {}

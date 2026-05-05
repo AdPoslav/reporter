@@ -57,6 +57,52 @@
     </ul>
   </div>
 
+  <!-- Data Management -->
+  <div class="card settings-card">
+    <h2 class="card-title">Data Management</h2>
+    <p class="card-desc">Export all your data to a portable JSON file, or import a backup. Works for migrating to a server or keeping a local backup.</p>
+
+    <div class="data-mgmt-grid">
+      <!-- Export -->
+      <div class="data-mgmt-box">
+        <h3 class="data-mgmt-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export backup
+        </h3>
+        <p class="data-mgmt-desc">Downloads a single JSON file with all projects, entries, holidays and settings.</p>
+        <div class="data-mgmt-actions">
+          <a href="/api/data/export" class="btn btn-primary" download>Download JSON</a>
+          <a href="/api/data/download-db" class="btn btn-outline" download>Download raw .db</a>
+        </div>
+      </div>
+
+      <!-- Import -->
+      <div class="data-mgmt-box">
+        <h3 class="data-mgmt-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Import backup
+        </h3>
+        <p class="data-mgmt-desc">
+          <strong>Merge</strong> adds new data without touching existing records.<br>
+          <strong>Replace</strong> wipes everything and restores from the file.
+        </p>
+        <div class="form-group" style="margin-bottom:10px;">
+          <select id="import-mode">
+            <option value="merge">Merge (add new, keep existing)</option>
+            <option value="replace">Replace (overwrite everything)</option>
+          </select>
+        </div>
+        <div class="data-mgmt-actions">
+          <label class="btn btn-outline" style="cursor:pointer;">
+            Choose JSON file
+            <input type="file" id="import-file" accept=".json" style="display:none" onchange="runImport()"/>
+          </label>
+        </div>
+        <div id="import-result" class="export-result hidden" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="card settings-card">
     <h2 class="card-title">Export Column Mapping</h2>
     <table class="info-table">
@@ -106,5 +152,34 @@ document.querySelector('[name="first_name"]').addEventListener('input', updateFi
 document.querySelector('[name="last_name"]').addEventListener('input',  updateFilenameExample);
 
 document.addEventListener('DOMContentLoaded', updateFilenameExample);
+
+async function runImport() {
+  const file = document.getElementById('import-file').files[0];
+  if (!file) return;
+  const mode = document.getElementById('import-mode').value;
+  const resultEl = document.getElementById('import-result');
+
+  if (mode === 'replace' && !confirm('⚠️ Replace mode will delete ALL existing data and restore from this file. Continue?')) {
+    document.getElementById('import-file').value = '';
+    return;
+  }
+
+  resultEl.className = 'export-result';
+  resultEl.innerHTML = 'Importing…';
+
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/api/data/import?mode=${mode}`, { method: 'POST', body: form });
+  const data = await res.json();
+
+  if (!res.ok || data.error) {
+    resultEl.className = 'export-result export-result-error';
+    resultEl.innerHTML = `<strong>Error:</strong> ${data.error || 'Unknown error'}`;
+  } else {
+    resultEl.className = 'export-result export-result-success';
+    resultEl.innerHTML = `✓ Done (${mode}): ${data.projects_mapped} projects, ${data.entries_inserted} entries, ${data.holidays_inserted} holidays imported.`;
+  }
+  document.getElementById('import-file').value = '';
+}
 </script>
 {% endblock %}

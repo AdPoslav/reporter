@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import threading
 import webbrowser
@@ -398,6 +400,182 @@ def api_download(filename):
     if not os.path.exists(filepath):
         return jsonify({'error': 'File not found'}), 404
     return send_file(filepath, as_attachment=True, download_name=filename)
+
+
+# ── Data export / import ──────────────────────────────────────────────────────
+
+@app.route('/api/data/export', methods=['GET'])
+def api_data_export():
+    conn = db.get_db()
+    settings = {r['key']: r['value'] for r in conn.execute('SELECT key, value FROM settings').fetchall()}
+    projects = []
+    for p in conn.execute('SELECT * FROM projects ORDER BY id').fetchall():
+        codes = [dict(c) for c in conn.execute(
+            'SELECT * FROM project_codes WHERE project_id = ? ORDER BY sort_order, id', (p['id'],)
+        ).fetchall()]
+        projects.append({**dict(p), 'codes': codes})
+    holidays     = [dict(r) for r in conn.execute('SELECT * FROM holidays ORDER BY id').fetchall()]
+    time_entries = [dict(r) for r in conn.execute('SELECT * FROM time_entries ORDER BY id').fetchall()]
+    conn.close()
+
+    bundle = {
+        'version':     2,
+        'exported_at': datetime.datetime.now().isoformat(timespec='seconds'),
+        'settings':    settings,
+        'projects':    projects,
+        'holidays':    holidays,
+        'time_entries': time_entries,
+    }
+    buf = io.BytesIO(json.dumps(bundle, indent=2, ensure_ascii=False).encode('utf-8'))
+    ts  = datetime.datetime.now().strftime('%Y%m%d_%H%M')
+    return send_file(buf, mimetype='application/json',
+                     as_attachment=True, download_name=f'timelog_backup_{ts}.json')
+
+
+@app.route('/api/data/import', methods=['POST'])
+def api_data_import():
+    mode = request.args.get('mode', 'merge')   # 'merge' | 'replace'
+
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'No file uploaded'}), 400
+    try:
+        bundle = json.loads(f.read().decode('utf-8'))
+    except Exception:
+        return jsonify({'error': 'Invalid JSON file'}), 400
+
+    if bundle.get('version') not in (1, 2):
+        return jsonify({'error': 'Unsupported backup version'}), 400
+
+    conn = db.get_db()
+    try:
+        if mode == 'replace':
+            conn.executescript('''
+                DELETE FROM time_entries;
+                DELETE FROM project_codes;
+                DELETE FROM projects;
+                DELETE FROM holidays;
+                DELETE FROM settings;
+            ''')
+
+        # ── Settings ──────────────────────────────────────────────────────────
+        for key, value in (bundle.get('settings') or {}).items():
+            if mode == 'replace':
+                conn.execute('INSERT INTO settings (key, value) VALUES (?, ?)', (key, value))
+            else:
+                conn.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (key, value))
+
+        # ── Projects + codes (build old_id → new_id maps) ─────────────────────
+        proj_id_map = {}   # old_id → new_id
+        code_id_map = {}   # old_id → new_id
+
+        for p in (bundle.get('projects') or []):
+            old_pid = p['id']
+            if mode == 'replace':
+                cur = conn.execute(
+                    'INSERT INTO projects (name, code, created_at, archived_at) VALUES (?,?,?,?)',
+                    (p['name'], p['code'], p.get('created_at'), p.get('archived_at'))
+                )
+                new_pid = cur.lastrowid
+            else:
+                existing = conn.execute(
+                    'SELECT id FROM projects WHERE name = ? AND code = ?', (p['name'], p['code'])
+                ).fetchone()
+                if existing:
+                    new_pid = existing['id']
+                else:
+                    cur = conn.execute(
+                        'INSERT INTO projects (name, code, created_at, archived_at) VALUES (?,?,?,?)',
+                        (p['name'], p['code'], p.get('created_at'), p.get('archived_at'))
+                    )
+                    new_pid = cur.lastrowid
+            proj_id_map[old_pid] = new_pid
+
+            for c in (p.get('codes') or []):
+                old_cid = c['id']
+                if mode == 'replace':
+                    cur = conn.execute(
+                        'INSERT INTO project_codes (project_id, code, label, sort_order, deprecated) VALUES (?,?,?,?,?)',
+                        (new_pid, c['code'], c['label'], c.get('sort_order', 0), c.get('deprecated', 0))
+                    )
+                    new_cid = cur.lastrowid
+                else:
+                    existing = conn.execute(
+                        'SELECT id FROM project_codes WHERE project_id = ? AND code = ?', (new_pid, c['code'])
+                    ).fetchone()
+                    if existing:
+                        new_cid = existing['id']
+                    else:
+                        cur = conn.execute(
+                            'INSERT INTO project_codes (project_id, code, label, sort_order, deprecated) VALUES (?,?,?,?,?)',
+                            (new_pid, c['code'], c['label'], c.get('sort_order', 0), c.get('deprecated', 0))
+                        )
+                        new_cid = cur.lastrowid
+                code_id_map[old_cid] = new_cid
+
+        # ── Holidays ──────────────────────────────────────────────────────────
+        h_inserted = 0
+        for h in (bundle.get('holidays') or []):
+            if mode == 'merge':
+                exists = conn.execute(
+                    'SELECT id FROM holidays WHERE day=? AND month=? AND is_recurring=? AND description=?',
+                    (h['day'], h['month'], h.get('is_recurring', 1), h.get('description', ''))
+                ).fetchone()
+                if exists:
+                    continue
+            conn.execute(
+                'INSERT INTO holidays (day, month, year, description, is_recurring) VALUES (?,?,?,?,?)',
+                (h['day'], h['month'], h.get('year'), h.get('description', ''), h.get('is_recurring', 1))
+            )
+            h_inserted += 1
+
+        # ── Time entries ──────────────────────────────────────────────────────
+        e_inserted = 0
+        for e in (bundle.get('time_entries') or []):
+            new_pid = proj_id_map.get(e.get('project_id'))
+            new_cid = code_id_map.get(e.get('project_code_id'))
+            if mode == 'merge':
+                exists = conn.execute('''
+                    SELECT id FROM time_entries
+                    WHERE entry_date=? AND hours=? AND ticket=? AND description=?
+                    AND project_id IS ? AND is_absence=?
+                ''', (e['entry_date'], e['hours'], e.get('ticket',''),
+                      e.get('description',''), new_pid, e.get('is_absence', 0))
+                ).fetchone()
+                if exists:
+                    continue
+            conn.execute('''
+                INSERT INTO time_entries
+                (entry_date, project_id, project_code_id, hours, ticket, description,
+                 is_absence, absence_type, include_in_export, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            ''', (e['entry_date'], new_pid, new_cid, e['hours'],
+                  e.get('ticket',''), e.get('description',''),
+                  e.get('is_absence', 0), e.get('absence_type',''),
+                  e.get('include_in_export', 1), e.get('created_at')))
+            e_inserted += 1
+
+        conn.commit()
+    except Exception as ex:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(ex)}), 500
+
+    conn.close()
+    return jsonify({
+        'success': True,
+        'mode': mode,
+        'projects_mapped': len(proj_id_map),
+        'holidays_inserted': h_inserted,
+        'entries_inserted': e_inserted,
+    })
+
+
+@app.route('/api/data/download-db', methods=['GET'])
+def api_download_db():
+    return send_file(db.DB_PATH, as_attachment=True,
+                     download_name='timelog_backup.db',
+                     mimetype='application/octet-stream')
 
 
 # ── Boot ──────────────────────────────────────────────────────────────────────
