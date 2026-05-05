@@ -112,7 +112,7 @@ body {
 }
 
 .sidebar-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-copyright { font-size: 10px; color: #334155; margin-top: 8px; text-align: center; }
+.sidebar-copyright { font-size: 11px; color: rgba(255,255,255,.55); margin-top: 8px; text-align: center; letter-spacing: .3px; }
 
 /* ── Page header ─────────────────────────────────────────────────────── */
 .page-header {
