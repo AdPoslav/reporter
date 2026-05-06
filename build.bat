@@ -29,7 +29,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 :: Build
 echo  [2/3] Building Reporter.exe  ^(this takes ~1-2 minutes^)...
-pyinstaller reporter.spec --clean --noconfirm
+python -m PyInstaller reporter.spec --clean --noconfirm
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo  ERROR: Build failed. See output above for details.
