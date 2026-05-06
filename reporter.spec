@@ -50,5 +50,5 @@ exe = EXE(
     runtime_tmpdir=None,
     console=False,          # no black terminal window
     disable_windowed_traceback=False,
-    icon=None,              # optional: set to 'reporter.ico' if you have one
+    icon='reporter.ico',
 )

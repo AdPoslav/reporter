@@ -7,6 +7,12 @@ timelog.db
 # Generated exports
 exports/
 
+# Generated build artifacts
+reporter.ico
+build/
+dist/
+*.spec.bak
+
 # Python
 __pycache__/
 *.py[cod]

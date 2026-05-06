@@ -14,7 +14,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Install PyInstaller only if not already present
-echo  [1/3] Checking PyInstaller...
+echo  [1/4] Checking PyInstaller...
 python -c "import PyInstaller" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo  PyInstaller not found, installing...
@@ -27,8 +27,30 @@ if %ERRORLEVEL% NEQ 0 (
     echo  PyInstaller already installed, skipping.
 )
 
+:: Install Pillow only if not already present
+echo  [2/4] Checking Pillow...
+python -c "import PIL" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo  Pillow not found, installing...
+    python -m pip install pillow --quiet
+    if %ERRORLEVEL% NEQ 0 (
+        echo  ERROR: Could not install Pillow.
+        pause & exit /b 1
+    )
+) else (
+    echo  Pillow already installed, skipping.
+)
+
+:: Generate icon
+echo  [3/4] Generating reporter.ico...
+python create_icon.py
+if %ERRORLEVEL% NEQ 0 (
+    echo  ERROR: Could not generate reporter.ico.
+    pause & exit /b 1
+)
+
 :: Build
-echo  [2/3] Building Reporter.exe  ^(this takes ~1-2 minutes^)...
+echo  [4/4] Building Reporter.exe  ^(this takes ~1-2 minutes^)...
 python -m PyInstaller reporter.spec --clean --noconfirm
 if %ERRORLEVEL% NEQ 0 (
     echo.
@@ -38,7 +60,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 :: Done
 echo.
-echo  [3/3] Done!
+echo  Done!
 echo.
 echo  ================================================
 echo   dist\Reporter.exe  is ready to share
