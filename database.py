@@ -1,9 +1,21 @@
 import sqlite3
 import os
+import sys
 import calendar
 import datetime
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'timelog.db')
+
+def _get_db_path():
+    """AppData\\Reporter when frozen (exe), local dir when running from source."""
+    if getattr(sys, 'frozen', False):
+        base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'Reporter')
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, 'timelog.db')
+
+
+DB_PATH = _get_db_path()
 
 
 def get_db():

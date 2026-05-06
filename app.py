@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import sys
 import threading
 import webbrowser
 import datetime
@@ -10,7 +11,19 @@ from flask import Flask, render_template, request, jsonify, send_file
 import database as db
 import export as exp
 
-app = Flask(__name__)
+
+def _resource(relative_path):
+    """Resolve path to a bundled resource — works in dev and as PyInstaller exe."""
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, relative_path)
+
+
+app = Flask(__name__,
+    template_folder=_resource('templates'),
+    static_folder=_resource('static'))
 app.secret_key = 'timelog-internal-2024'
 
 

@@ -1,5 +1,6 @@
 import os
 import io
+import sys
 import struct
 from datetime import datetime, date as date_type
 
@@ -9,11 +10,27 @@ import xlwt
 from xlwt import BIFFRecords as B  # noqa: F401  (kept for callers/extension)
 from xlutils.copy import copy as xl_copy
 
-TEMPLATE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    'export_template', 'Vorlage_XLS-Upload.xls'
-)
-EXPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exports')
+
+def _resource(relative_path):
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, relative_path)
+
+
+def _user_dir():
+    """Writable directory for user data (exports, db)."""
+    if getattr(sys, 'frozen', False):
+        d = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'Reporter')
+    else:
+        d = os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+TEMPLATE_PATH = _resource(os.path.join('export_template', 'Vorlage_XLS-Upload.xls'))
+EXPORTS_DIR   = os.path.join(_user_dir(), 'exports')
 
 # Columns kept visible in the export; everything else is hidden.
 _USED_COLS  = {0, 1, 3, 4, 6, 22}
