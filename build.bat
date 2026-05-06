@@ -13,12 +13,18 @@ if %ERRORLEVEL% NEQ 0 (
     pause & exit /b 1
 )
 
-:: Install / upgrade PyInstaller
-echo  [1/3] Installing PyInstaller...
-python -m pip install pyinstaller --quiet --upgrade
+:: Install PyInstaller only if not already present
+echo  [1/3] Checking PyInstaller...
+python -c "import PyInstaller" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo  ERROR: Could not install PyInstaller.
-    pause & exit /b 1
+    echo  PyInstaller not found, installing...
+    python -m pip install pyinstaller --quiet
+    if %ERRORLEVEL% NEQ 0 (
+        echo  ERROR: Could not install PyInstaller.
+        pause & exit /b 1
+    )
+) else (
+    echo  PyInstaller already installed, skipping.
 )
 
 :: Build
