@@ -366,14 +366,17 @@ body {
 .aside-cal-day:not(.day-blank):not(.day-future) { cursor: pointer; }
 .aside-cal-day:not(.day-blank):not(.day-future):hover { transform: scale(1.18); }
 .aside-cal-day.day-blank   { background: transparent; }
-.aside-cal-day.day-off     { background: rgba(255,255,255,.04); color: #334155; }
-.aside-cal-day.day-future  { background: rgba(255,255,255,.03); color: #334155; cursor: default; }
+.aside-cal-day.day-off     { background: rgba(255,255,255,.09); color: #64748B; }
+.aside-cal-day.day-holiday { background: rgba(250,204,21,.18); color: #FCD34D; }
+.aside-cal-day.day-future  { background: rgba(255,255,255,.06); color: #475569; cursor: default; }
 .aside-cal-day.day-ok      { background: rgba(52,211,153,.18); color: #6EE7B7; }
-.aside-cal-day.day-missing { background: rgba(248,113,113,.2); color: #FCA5A5; font-weight: 700; }
+.aside-cal-day.day-missing { background: rgba(248,113,113,.22); color: #FCA5A5; font-weight: 700; }
 .aside-cal-day.day-active  { background: #3B82F6; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px rgba(59,130,246,.4); }
-.aside-cal-badge { margin-top: 10px; text-align: center; }
-.aside-cal-badge .badge-ok   { font-size: 10.5px; font-weight: 600; color: #34D399; }
-.aside-cal-badge .badge-warn { font-size: 10.5px; font-weight: 600; color: #FCD34D; }
+.aside-cal-badge { margin-top: 10px; display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.aside-cal-dot   { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.aside-cal-dot-ok      { background: #34D399; }
+.aside-cal-dot-missing { background: #F87171; }
+.aside-cal-dot-label   { font-size: 10px; color: #475569; }
 
 /* ── Missing days calendar ───────────────────────────────────────────── */
 .missing-days-card {

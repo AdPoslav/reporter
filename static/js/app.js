@@ -556,12 +556,14 @@ async function loadAsideCalendar() {
   const data = await apiFetch(`/api/stats/missing-days?year=${asideCalYear}&month=${asideCalMonth}`);
   if (!data) return;
 
-  // update badge
+  // update badge — show dot legend only when there are missing days
   if (badgeEl) {
-    if (data.missing_count === 0) {
-      badgeEl.innerHTML = '<span class="aside-cal-badge badge-ok">✓ all filled</span>';
+    if (data.missing_count > 0) {
+      badgeEl.innerHTML =
+        `<span class="aside-cal-dot aside-cal-dot-missing"></span>` +
+        `<span class="aside-cal-dot-label">${data.missing_count} missing</span>`;
     } else {
-      badgeEl.innerHTML = `<span class="aside-cal-badge badge-warn">${data.missing_count} day${data.missing_count > 1 ? 's' : ''} missing</span>`;
+      badgeEl.innerHTML = '';
     }
   }
 
@@ -582,11 +584,12 @@ async function loadAsideCalendar() {
     const cell = document.createElement('div');
     const isActive = d.date === activeIso;
     let cls = 'aside-cal-day ';
-    if (isActive)                         cls += 'day-active';
-    else if (d.is_weekend || d.is_holiday) cls += 'day-off';
-    else if (d.is_future)                  cls += 'day-future';
-    else if (d.missing)                    cls += 'day-missing';
-    else                                   cls += 'day-ok';
+    if (isActive)          cls += 'day-active';
+    else if (d.is_holiday) cls += 'day-holiday';
+    else if (d.is_weekend) cls += 'day-off';
+    else if (d.is_future)  cls += 'day-future';
+    else if (d.missing)    cls += 'day-missing';
+    else                   cls += 'day-ok';
     cell.className = cls;
     cell.textContent = d.day;
 
