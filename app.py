@@ -415,15 +415,23 @@ def api_missing_days():
     conn = db.get_db()
     holidays = conn.execute('SELECT day, month, year, is_recurring FROM holidays').fetchall()
     # hours logged per day (non-absence only)
-    rows = conn.execute('''
+    # work hours per day (for display)
+    work_rows = conn.execute('''
         SELECT entry_date, COALESCE(SUM(hours),0) AS h
         FROM time_entries
         WHERE entry_date LIKE ? AND is_absence = 0
         GROUP BY entry_date
     ''', (f'{year:04d}-{month:02d}%',)).fetchall()
+    # any entry at all per day (absence counts — not a "missing" day)
+    any_rows = conn.execute('''
+        SELECT entry_date FROM time_entries
+        WHERE entry_date LIKE ?
+        GROUP BY entry_date
+    ''', (f'{year:04d}-{month:02d}%',)).fetchall()
     conn.close()
 
-    logged = {r['entry_date']: round(r['h'], 2) for r in rows}
+    work_hours  = {r['entry_date']: round(r['h'], 2) for r in work_rows}
+    days_with_entries = {r['entry_date'] for r in any_rows}
 
     def is_holiday(d):
         return any(
@@ -440,9 +448,10 @@ def api_missing_days():
         is_we  = d.weekday() >= 5
         is_hol = is_holiday(d)
         is_fut = d > today
-        hours  = logged.get(ds, 0.0)
+        hours  = work_hours.get(ds, 0.0)
+        has_any = ds in days_with_entries
         is_work = not is_we and not is_hol
-        missing = is_work and not is_fut and hours == 0.0
+        missing = is_work and not is_fut and not has_any
 
         days.append({
             'date':       ds,
@@ -453,6 +462,7 @@ def api_missing_days():
             'is_holiday': is_hol,
             'is_weekend': is_we,
             'hours':      hours,
+            'has_entries': has_any,
             'missing':    missing,
         })
         if missing:

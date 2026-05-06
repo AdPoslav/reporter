@@ -320,6 +320,61 @@ body {
 .period-nav-inline { display: flex; align-items: center; gap: 8px; }
 .period-label-inline { font-weight: 600; font-size: 13px; min-width: 140px; text-align: center; }
 
+/* ── Aside mini calendar (right panel) ──────────────────────────────── */
+.aside-cal-wrap {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.aside-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+#aside-cal-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #94A3B8;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.aside-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.aside-cal-dow {
+  font-size: 9px;
+  font-weight: 700;
+  color: #475569;
+  text-align: center;
+  padding-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.aside-cal-day {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 500;
+  transition: transform .1s, opacity .1s;
+}
+.aside-cal-day:not(.day-blank):not(.day-future) { cursor: pointer; }
+.aside-cal-day:not(.day-blank):not(.day-future):hover { transform: scale(1.18); }
+.aside-cal-day.day-blank   { background: transparent; }
+.aside-cal-day.day-off     { background: rgba(255,255,255,.04); color: #334155; }
+.aside-cal-day.day-future  { background: rgba(255,255,255,.03); color: #334155; cursor: default; }
+.aside-cal-day.day-ok      { background: rgba(52,211,153,.18); color: #6EE7B7; }
+.aside-cal-day.day-missing { background: rgba(248,113,113,.2); color: #FCA5A5; font-weight: 700; }
+.aside-cal-day.day-active  { background: #3B82F6; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px rgba(59,130,246,.4); }
+.aside-cal-badge { margin-top: 10px; text-align: center; }
+.aside-cal-badge .badge-ok   { font-size: 10.5px; font-weight: 600; color: #34D399; }
+.aside-cal-badge .badge-warn { font-size: 10.5px; font-weight: 600; color: #FCD34D; }
+
 /* ── Missing days calendar ───────────────────────────────────────────── */
 .missing-days-card {
   background: var(--card-bg);

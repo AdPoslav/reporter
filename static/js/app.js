@@ -486,13 +486,135 @@ function _offsetToIso(offset) {
 function shiftDay(delta) {
   const newOffset = dayOffset + delta;
   if (newOffset > 0) return;
+  const prevIso = _offsetToIso(dayOffset);
   dayOffset = newOffset;
+  const newIso  = _offsetToIso(dayOffset);
+  // If we crossed a month boundary, sync the calendar
+  if (prevIso.slice(0, 7) !== newIso.slice(0, 7)) {
+    const [y, m] = newIso.split('-');
+    asideCalYear  = parseInt(y);
+    asideCalMonth = parseInt(m);
+    loadAsideCalendar();
+  } else {
+    _highlightAsideCalDay(newIso);
+  }
   loadTodayStats();
 }
 
 function jumpToToday() {
   dayOffset = 0;
+  const iso = _offsetToIso(0);
+  const [y, m] = iso.split('-');
+  asideCalYear  = parseInt(y);
+  asideCalMonth = parseInt(m);
+  loadAsideCalendar();
   loadTodayStats();
+}
+
+function jumpToDay(iso) {
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  const target = new Date(iso + 'T00:00:00');
+  if (target > todayDate) return;
+  dayOffset = Math.round((target - todayDate) / 86400000);
+  const [y, m] = iso.split('-');
+  asideCalYear  = parseInt(y);
+  asideCalMonth = parseInt(m);
+  loadTodayStats();
+  _highlightAsideCalDay(iso);
+}
+
+/* ── Aside mini calendar ─────────────────────────────────────────────── */
+
+let asideCalYear  = new Date().getFullYear();
+let asideCalMonth = new Date().getMonth() + 1;
+const _ASIDE_MONTHS = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+
+function shiftAsideCal(delta) {
+  asideCalMonth += delta;
+  if (asideCalMonth > 12) { asideCalMonth = 1; asideCalYear++; }
+  if (asideCalMonth < 1)  { asideCalMonth = 12; asideCalYear--; }
+  loadAsideCalendar();
+}
+
+async function loadAsideCalendar() {
+  const grid = document.getElementById('aside-cal-grid');
+  if (!grid) return;
+
+  const labelEl  = document.getElementById('aside-cal-label');
+  const nextBtn  = document.getElementById('aside-cal-next-btn');
+  const badgeEl  = document.getElementById('aside-cal-badge');
+  const today    = new Date(); today.setHours(0,0,0,0);
+  const nowYear  = today.getFullYear();
+  const nowMonth = today.getMonth() + 1;
+
+  if (labelEl) labelEl.textContent = `${_ASIDE_MONTHS[asideCalMonth-1]} ${asideCalYear}`;
+  // disable next-month if already at current month
+  if (nextBtn) nextBtn.disabled = (asideCalYear === nowYear && asideCalMonth === nowMonth);
+
+  const data = await apiFetch(`/api/stats/missing-days?year=${asideCalYear}&month=${asideCalMonth}`);
+  if (!data) return;
+
+  // update badge
+  if (badgeEl) {
+    if (data.missing_count === 0) {
+      badgeEl.innerHTML = '<span class="aside-cal-badge badge-ok">✓ all filled</span>';
+    } else {
+      badgeEl.innerHTML = `<span class="aside-cal-badge badge-warn">${data.missing_count} day${data.missing_count > 1 ? 's' : ''} missing</span>`;
+    }
+  }
+
+  const activeIso = _offsetToIso(dayOffset);
+  const headers   = Array.from(grid.children).slice(0, 7);
+  grid.innerHTML  = '';
+  headers.forEach(h => grid.appendChild(h));
+
+  // leading blanks
+  const firstWd = data.days[0].weekday;
+  for (let i = 0; i < firstWd; i++) {
+    const b = document.createElement('div');
+    b.className = 'aside-cal-day day-blank';
+    grid.appendChild(b);
+  }
+
+  data.days.forEach(d => {
+    const cell = document.createElement('div');
+    const isActive = d.date === activeIso;
+    let cls = 'aside-cal-day ';
+    if (isActive)                         cls += 'day-active';
+    else if (d.is_weekend || d.is_holiday) cls += 'day-off';
+    else if (d.is_future)                  cls += 'day-future';
+    else if (d.missing)                    cls += 'day-missing';
+    else                                   cls += 'day-ok';
+    cell.className = cls;
+    cell.textContent = d.day;
+
+    let tip = d.date;
+    if (d.is_holiday)       tip += ' · holiday';
+    else if (d.is_weekend)  tip += ' · weekend';
+    else if (d.is_future)   tip += ' · future';
+    else if (d.missing)     tip += ' · no entries!';
+    else if (d.hours > 0)   tip += ` · ${d.hours}h logged`;
+    else                    tip += ' · absence logged';
+    cell.title = tip;
+
+    if (!d.is_future) cell.onclick = () => jumpToDay(d.date);
+    grid.appendChild(cell);
+  });
+}
+
+function _highlightAsideCalDay(iso) {
+  document.querySelectorAll('#aside-cal-grid .aside-cal-day').forEach(cell => {
+    if (cell.title.startsWith(iso)) {
+      cell.classList.add('day-active');
+      cell.classList.remove('day-ok', 'day-missing', 'day-off', 'day-future');
+    } else if (cell.classList.contains('day-active')) {
+      cell.classList.remove('day-active');
+      // restore original class from data — simpler to just reload
+      loadAsideCalendar();
+    }
+  });
 }
 
 async function loadTodayStats() {
@@ -546,4 +668,7 @@ async function loadTodayStats() {
 
 /* ── Boot ────────────────────────────────────────────────────────────── */
 
-document.addEventListener('DOMContentLoaded', loadSidebarUser);
+document.addEventListener('DOMContentLoaded', () => {
+  loadSidebarUser();
+  loadAsideCalendar();
+});

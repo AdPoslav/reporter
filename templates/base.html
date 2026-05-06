@@ -127,6 +127,26 @@
       </svg>
       Log Time
     </button>
+
+    <!-- Mini month calendar -->
+    <div class="aside-cal-wrap">
+      <div class="aside-cal-header">
+        <button class="today-nav-btn" onclick="shiftAsideCal(-1)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span id="aside-cal-label"></span>
+        <button class="today-nav-btn" id="aside-cal-next-btn" onclick="shiftAsideCal(1)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div class="aside-cal-grid" id="aside-cal-grid">
+        <div class="aside-cal-dow">M</div><div class="aside-cal-dow">T</div>
+        <div class="aside-cal-dow">W</div><div class="aside-cal-dow">T</div>
+        <div class="aside-cal-dow">F</div><div class="aside-cal-dow">S</div>
+        <div class="aside-cal-dow">S</div>
+      </div>
+      <div id="aside-cal-badge"></div>
+    </div>
   </div>
 </div>
 
