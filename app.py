@@ -215,9 +215,12 @@ def api_restore_project(pid):
 @app.route('/api/projects/<int:pid>/codes', methods=['POST'])
 def api_create_code(pid):
     data = request.get_json()
+    raw_lstnr = data.get('lstnr_override')
+    lstnr = int(raw_lstnr) if raw_lstnr not in (None, '', 0, '0') else None
     cid = db.create_project_code(
         pid, data['code'].strip(), data['label'].strip(),
-        deprecated=bool(data.get('deprecated', False))
+        deprecated=bool(data.get('deprecated', False)),
+        lstnr_override=lstnr,
     )
     return jsonify({'id': cid, 'success': True})
 
@@ -225,9 +228,12 @@ def api_create_code(pid):
 @app.route('/api/projects/<int:pid>/codes/<int:cid>', methods=['PUT'])
 def api_update_code(pid, cid):
     data = request.get_json()
+    raw_lstnr = data.get('lstnr_override')
+    lstnr = int(raw_lstnr) if raw_lstnr not in (None, '', 0, '0') else None
     db.update_project_code(
         cid, data['code'].strip(), data['label'].strip(),
-        deprecated=bool(data.get('deprecated', False))
+        deprecated=bool(data.get('deprecated', False)),
+        lstnr_override=lstnr,
     )
     return jsonify({'success': True})
 

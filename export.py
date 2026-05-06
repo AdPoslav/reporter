@@ -183,9 +183,11 @@ def generate_export(entries, project_name, project_code, work_id,
         ltxa1       = _format_ltxa1(entry.get('ticket', ''), entry.get('description', ''))
         code        = entry.get('entry_code') or entry.get('project_main_code', '')
 
+        lstnr = entry.get('entry_lstnr_override') or 81001
+
         _write_cell(ws, row_idx,  0, work_id_val, data_xf[0])
         _write_cell(ws, row_idx,  1, date_serial, data_xf[1])
-        _write_cell(ws, row_idx,  3, 81001,       data_xf[3])
+        _write_cell(ws, row_idx,  3, lstnr,       data_xf[3])
         _write_cell(ws, row_idx,  4, hours_val,   data_xf[4])
         _write_cell(ws, row_idx,  6, str(code),   data_xf[6])
         _write_cell(ws, row_idx, 22, ltxa1,       data_xf[22])

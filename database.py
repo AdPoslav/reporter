@@ -48,6 +48,7 @@ def init_db():
             label TEXT NOT NULL,
             sort_order INTEGER DEFAULT 0,
             deprecated INTEGER DEFAULT 0,
+            lstnr_override INTEGER DEFAULT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
         );
 
@@ -80,17 +81,17 @@ def init_db():
         INSERT OR IGNORE INTO settings (key, value) VALUES ('first_name', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('last_name', '');
     ''')
-    # Migration: add deprecated column to existing databases
-    try:
-        conn.execute("ALTER TABLE project_codes ADD COLUMN deprecated INTEGER DEFAULT 0")
-        conn.commit()
-    except Exception:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE projects ADD COLUMN archived_at TEXT DEFAULT NULL")
-        conn.commit()
-    except Exception:
-        pass
+    # Migrations for existing databases
+    for migration in [
+        "ALTER TABLE project_codes ADD COLUMN deprecated INTEGER DEFAULT 0",
+        "ALTER TABLE projects ADD COLUMN archived_at TEXT DEFAULT NULL",
+        "ALTER TABLE project_codes ADD COLUMN lstnr_override INTEGER DEFAULT NULL",
+    ]:
+        try:
+            conn.execute(migration)
+            conn.commit()
+        except Exception:
+            pass  # column already exists
     conn.close()
 
 
@@ -172,11 +173,11 @@ def restore_project(project_id):
     conn.close()
 
 
-def create_project_code(project_id, code, label, sort_order=0, deprecated=False):
+def create_project_code(project_id, code, label, sort_order=0, deprecated=False, lstnr_override=None):
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO project_codes (project_id, code, label, sort_order, deprecated) VALUES (?, ?, ?, ?, ?)",
-        (project_id, code, label, sort_order, 1 if deprecated else 0)
+        "INSERT INTO project_codes (project_id, code, label, sort_order, deprecated, lstnr_override) VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, code, label, sort_order, 1 if deprecated else 0, lstnr_override)
     )
     code_id = cursor.lastrowid
     conn.commit()
@@ -184,11 +185,11 @@ def create_project_code(project_id, code, label, sort_order=0, deprecated=False)
     return code_id
 
 
-def update_project_code(code_id, code, label, deprecated=False):
+def update_project_code(code_id, code, label, deprecated=False, lstnr_override=None):
     conn = get_db()
     conn.execute(
-        "UPDATE project_codes SET code = ?, label = ?, deprecated = ? WHERE id = ?",
-        (code, label, 1 if deprecated else 0, code_id)
+        "UPDATE project_codes SET code = ?, label = ?, deprecated = ?, lstnr_override = ? WHERE id = ?",
+        (code, label, 1 if deprecated else 0, lstnr_override, code_id)
     )
     conn.commit()
     conn.close()
@@ -205,7 +206,8 @@ def get_entries(filters=None):
     conn = get_db()
     query = '''
         SELECT te.*, p.name AS project_name, p.code AS project_main_code,
-               pc.code AS entry_code, pc.label AS entry_label
+               pc.code AS entry_code, pc.label AS entry_label,
+               pc.lstnr_override AS entry_lstnr_override
         FROM time_entries te
         LEFT JOIN projects p ON te.project_id = p.id
         LEFT JOIN project_codes pc ON te.project_code_id = pc.id
@@ -246,7 +248,8 @@ def get_entries(filters=None):
 def get_entry(entry_id):
     conn = get_db()
     entry = conn.execute('''
-        SELECT te.*, p.name AS project_name, pc.code AS entry_code, pc.label AS entry_label
+        SELECT te.*, p.name AS project_name, pc.code AS entry_code, pc.label AS entry_label,
+               pc.lstnr_override AS entry_lstnr_override
         FROM time_entries te
         LEFT JOIN projects p ON te.project_id = p.id
         LEFT JOIN project_codes pc ON te.project_code_id = pc.id

@@ -63,14 +63,15 @@ function renderProjects() {
         </div>
         ${p.codes.length ? `
         <table class="codes-table">
-          <thead><tr><th>Code</th><th>Label</th><th></th></tr></thead>
+          <thead><tr><th>Code</th><th>Label</th><th>/PPA/LSTNR</th><th></th></tr></thead>
           <tbody>
             ${p.codes.map(c => `
             <tr class="${c.deprecated ? 'code-row-deprecated' : ''}">
               <td><code class="code-chip ${c.deprecated ? 'code-chip-deprecated' : ''}">${escHtml(c.code)}</code>${c.deprecated ? ' <span class="badge-deprecated">deprecated</span>' : ''}</td>
               <td class="${c.deprecated ? 'text-deprecated' : ''}">${escHtml(c.label)}</td>
+              <td>${c.lstnr_override ? `<code class="code-chip">${c.lstnr_override}</code>` : '<span class="text-muted">81001</span>'}</td>
               <td class="td-actions">
-                <button class="btn-icon" title="Edit" onclick="openCodeModal(${p.id}, ${c.id}, '${escHtml(c.code).replace(/'/g,"\\'")}', '${escHtml(c.label).replace(/'/g,"\\'")}', ${c.deprecated ? 1 : 0})">
+                <button class="btn-icon" title="Edit" onclick="openCodeModal(${p.id}, ${c.id}, '${escHtml(c.code).replace(/'/g,"\\'")}', '${escHtml(c.label).replace(/'/g,"\\'")}', ${c.deprecated ? 1 : 0}, ${c.lstnr_override || 'null'})">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -135,7 +136,7 @@ async function deleteProject(pid, name) {
 
 // ── Code modal ─────────────────────────────────────────────────────────────
 
-function openCodeModal(pid, cid, code, label, deprecated) {
+function openCodeModal(pid, cid, code, label, deprecated, lstnrOverride) {
   const isEdit = !!cid;
   openModal(isEdit ? 'Edit Code' : 'Add Billing Code', `
     <form id="code-form" onsubmit="saveCode(event, ${pid}, ${cid || 'null'})">
@@ -146,6 +147,10 @@ function openCodeModal(pid, cid, code, label, deprecated) {
       <div class="form-group">
         <label>Label *</label>
         <input type="text" name="label" required value="${label ? escHtml(label) : ''}" placeholder="e.g. Support"/>
+      </div>
+      <div class="form-group">
+        <label>/PPA/LSTNR override <span class="label-hint">(leave empty to use default 81001)</span></label>
+        <input type="number" name="lstnr_override" value="${lstnrOverride || ''}" placeholder="81001" min="1" style="max-width:160px"/>
       </div>
       <div class="form-group">
         <div class="toggle-row">
@@ -163,10 +168,12 @@ function openCodeModal(pid, cid, code, label, deprecated) {
 async function saveCode(e, pid, cid) {
   e.preventDefault();
   const form = e.target;
+  const lstnrRaw = form.lstnr_override.value.trim();
   const data = {
-    code:       form.code.value,
-    label:      form.label.value,
-    deprecated: form.deprecated.checked,
+    code:           form.code.value,
+    label:          form.label.value,
+    deprecated:     form.deprecated.checked,
+    lstnr_override: lstnrRaw ? parseInt(lstnrRaw, 10) : null,
   };
   const url    = cid ? `/api/projects/${pid}/codes/${cid}` : `/api/projects/${pid}/codes`;
   const method = cid ? 'PUT' : 'POST';
