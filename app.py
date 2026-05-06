@@ -21,9 +21,12 @@ def _resource(relative_path):
     return os.path.join(base, relative_path)
 
 
-app = Flask(__name__,
-    template_folder=_resource('templates'),
-    static_folder=_resource('static'))
+if getattr(sys, 'frozen', False):
+    app = Flask(__name__,
+                template_folder=_resource('templates'),
+                static_folder=_resource('static'))
+else:
+    app = Flask(__name__)   # dev: use default relative folders
 app.secret_key = 'timelog-internal-2024'
 
 
