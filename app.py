@@ -415,23 +415,25 @@ def api_missing_days():
     conn = db.get_db()
     holidays = conn.execute('SELECT day, month, year, is_recurring FROM holidays').fetchall()
     # hours logged per day (non-absence only)
-    # work hours per day (for display)
+    # work hours per day (for display in tooltip)
     work_rows = conn.execute('''
         SELECT entry_date, COALESCE(SUM(hours),0) AS h
         FROM time_entries
         WHERE entry_date LIKE ? AND is_absence = 0
         GROUP BY entry_date
     ''', (f'{year:04d}-{month:02d}%',)).fetchall()
-    # any entry at all per day (absence counts — not a "missing" day)
-    any_rows = conn.execute('''
-        SELECT entry_date FROM time_entries
+    # total hours per day incl. absence (for deficit calculation)
+    total_rows = conn.execute('''
+        SELECT entry_date, COALESCE(SUM(hours),0) AS h
+        FROM time_entries
         WHERE entry_date LIKE ?
         GROUP BY entry_date
     ''', (f'{year:04d}-{month:02d}%',)).fetchall()
     conn.close()
 
-    work_hours  = {r['entry_date']: round(r['h'], 2) for r in work_rows}
-    days_with_entries = {r['entry_date'] for r in any_rows}
+    work_hours        = {r['entry_date']: round(r['h'], 2) for r in work_rows}
+    total_hours       = {r['entry_date']: round(r['h'], 2) for r in total_rows}
+    days_with_entries = set(total_hours.keys())
 
     def is_holiday(d):
         return any(
@@ -468,9 +470,9 @@ def api_missing_days():
         if missing:
             missing_dates.append(ds)
 
-    # Hours deficit for past working days
+    # Hours deficit for past working days — use total hours (work + absence)
     past_fund    = sum(8 for d in days if d['is_working'] and not d['is_future'])
-    past_logged  = sum(d['hours'] for d in days if d['is_working'] and not d['is_future'])
+    past_logged  = sum(total_hours.get(d['date'], 0.0) for d in days if d['is_working'] and not d['is_future'])
     deficit      = round(past_fund - past_logged, 2)
 
     return jsonify({
