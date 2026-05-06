@@ -681,10 +681,13 @@ def api_download_db():
 if __name__ == '__main__':
     db.init_db()
 
+    # dev uses 5001, exe uses 5000 — prevents port clash if both run simultaneously
+    PORT = 5001 if not getattr(sys, 'frozen', False) else 5000
+
     def _open_browser():
         import time
         time.sleep(1.2)
-        webbrowser.open('http://localhost:5000')
+        webbrowser.open(f'http://localhost:{PORT}')
 
     threading.Thread(target=_open_browser, daemon=True).start()
-    app.run(host='127.0.0.1', port=5000, debug=False)
+    app.run(host='127.0.0.1', port=PORT, debug=False)

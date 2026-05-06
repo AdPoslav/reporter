@@ -36,7 +36,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :start
-echo  Starting TimeLog on http://localhost:5000
+echo  Starting TimeLog on http://localhost:5001  ^(dev mode^)
 echo  Close this window to stop the server.
 echo.
 
