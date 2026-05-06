@@ -468,11 +468,19 @@ def api_missing_days():
         if missing:
             missing_dates.append(ds)
 
+    # Hours deficit for past working days
+    past_fund    = sum(8 for d in days if d['is_working'] and not d['is_future'])
+    past_logged  = sum(d['hours'] for d in days if d['is_working'] and not d['is_future'])
+    deficit      = round(past_fund - past_logged, 2)
+
     return jsonify({
         'year': year, 'month': month,
         'days': days,
-        'missing_count': len(missing_dates),
-        'missing_dates': missing_dates,
+        'missing_count':  len(missing_dates),
+        'missing_dates':  missing_dates,
+        'past_fund':      past_fund,
+        'past_logged':    round(past_logged, 2),
+        'deficit':        deficit,
     })
 
 

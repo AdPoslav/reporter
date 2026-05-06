@@ -372,11 +372,12 @@ body {
 .aside-cal-day.day-ok      { background: rgba(52,211,153,.18); color: #6EE7B7; }
 .aside-cal-day.day-missing { background: rgba(248,113,113,.22); color: #FCA5A5; font-weight: 700; }
 .aside-cal-day.day-active  { background: #3B82F6; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px rgba(59,130,246,.4); }
-.aside-cal-badge { margin-top: 10px; display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
-.aside-cal-dot   { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.aside-cal-badge   { margin-top: 11px; display: flex; align-items: center; gap: 7px; }
+.aside-cal-dot     { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .aside-cal-dot-ok      { background: #34D399; }
 .aside-cal-dot-missing { background: #F87171; }
-.aside-cal-dot-label   { font-size: 10px; color: #475569; }
+.aside-cal-deficit { font-size: 11px; font-weight: 600; color: #fff; letter-spacing: .01em; }
+.aside-cal-surplus { font-size: 11px; font-weight: 600; color: #34D399; letter-spacing: .01em; }
 
 /* ── Missing days calendar ───────────────────────────────────────────── */
 .missing-days-card {

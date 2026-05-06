@@ -556,12 +556,16 @@ async function loadAsideCalendar() {
   const data = await apiFetch(`/api/stats/missing-days?year=${asideCalYear}&month=${asideCalMonth}`);
   if (!data) return;
 
-  // update badge — show dot legend only when there are missing days
+  // update badge — show hours deficit when behind, nothing when on track
   if (badgeEl) {
-    if (data.missing_count > 0) {
+    if (data.deficit > 0) {
       badgeEl.innerHTML =
         `<span class="aside-cal-dot aside-cal-dot-missing"></span>` +
-        `<span class="aside-cal-dot-label">${data.missing_count} missing</span>`;
+        `<span class="aside-cal-deficit">&minus;${data.deficit}h unlogged</span>`;
+    } else if (data.deficit < 0) {
+      badgeEl.innerHTML =
+        `<span class="aside-cal-dot aside-cal-dot-ok"></span>` +
+        `<span class="aside-cal-surplus">+${Math.abs(data.deficit)}h over</span>`;
     } else {
       badgeEl.innerHTML = '';
     }
