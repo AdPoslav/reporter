@@ -29,10 +29,10 @@ if %ERRORLEVEL% NEQ 0 (
 
 :: Install Pillow only if not already present
 echo  [2/4] Checking Pillow...
-python -c "import PIL" >nul 2>&1
+pip show Pillow >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo  Pillow not found, installing...
-    python -m pip install pillow --quiet
+    python -m pip install Pillow
     if %ERRORLEVEL% NEQ 0 (
         echo  ERROR: Could not install Pillow.
         pause & exit /b 1
