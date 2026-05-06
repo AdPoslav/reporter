@@ -3,6 +3,7 @@ Generates reporter.ico from scratch using Pillow.
 Run automatically by build.bat before PyInstaller.
 """
 import math
+import os
 from PIL import Image, ImageDraw
 
 
@@ -55,16 +56,40 @@ def draw_clock(size):
 
 
 def main():
-    sizes  = [16, 24, 32, 48, 64, 128, 256]
-    frames = [draw_clock(s) for s in sizes]
-    # Save multi-size ICO
-    frames[0].save(
-        'reporter.ico',
+    sizes = [16, 24, 32, 48, 64, 128, 256]
+
+    # Draw each size individually for best quality at small sizes
+    frames = [draw_clock(s).convert('RGBA') for s in sizes]
+
+    # Pillow ICO: save the largest frame, pass all pre-drawn frames via
+    # append_images so each size uses its own hand-drawn version rather than
+    # a low-quality downscale.  sizes= tells Pillow which entries to include.
+    out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reporter.ico')
+
+    # Build list of (size, image) pairs — largest first
+    ico_frames = list(zip(sizes[::-1], frames[::-1]))  # 256 … 16
+
+    # Save: Pillow ICO plugin accepts a list of images via append_images,
+    # one per size entry.  We pass the 256px as the "primary" and the rest
+    # as append_images, with matching sizes= so each slot maps to its frame.
+    ico_frames_sorted = sorted(zip(sizes, frames), reverse=True)
+    sorted_sizes  = [(s, s) for s, _ in ico_frames_sorted]
+    sorted_images = [img     for _, img in ico_frames_sorted]
+
+    sorted_images[0].save(
+        out_path,
         format='ICO',
-        sizes=[(s, s) for s in sizes],
-        append_images=frames[1:],
+        sizes=sorted_sizes,
+        append_images=sorted_images[1:],
     )
-    print(f'reporter.ico created ({len(sizes)} sizes: {sizes})')
+
+    # Verify the file was actually written
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError(f'ICO file was not created at {out_path}')
+
+    print(f'reporter.ico created ({os.path.getsize(out_path)//1024} KB, '
+          f'{len(sizes)} sizes: {sizes})')
+    print(f'  -> {out_path}')
 
 
 if __name__ == '__main__':
